@@ -565,7 +565,7 @@
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
           Uložit zápis
         </button>
-        <button class="btn btn-ghost" onclick="spustIntervizi()">
+        <button class="btn btn-ghost" onclick="spustInterviziZZapisu()">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
           Spustit intervizi
         </button>
@@ -578,11 +578,22 @@
   <div class="screen" id="screen-intervize">
     <div class="section">
       <div class="section-label">Intervizní dialog</div>
-      <p style="font-size:15px; color:var(--text-dim); font-style:italic;">Claude jako intervizní partner — pracuje s posledním uloženým zápisem.</p>
+      <p style="font-size:15px; color:var(--text-dim); font-style:italic; margin-bottom:14px;">Claude jako intervizní partner — pracuje se všemi záznamy vybraného klienta.</p>
+      <div class="input-row" style="grid-template-columns: 1fr auto; gap:10px; align-items:flex-end;">
+        <div>
+          <div class="settings-label" style="margin-bottom:6px;">Klient</div>
+          <input type="text" id="intervize-klient-kod" placeholder="K001" maxlength="6"
+            style="text-transform:uppercase; font-family:'DM Mono',monospace; font-size:16px;">
+        </div>
+        <button class="btn btn-primary" style="width:auto; padding:14px 18px; white-space:nowrap;" onclick="spustIntervizi()">
+          Spustit
+        </button>
+      </div>
+      <div id="intervize-klient-info" style="margin-top:10px; font-family:'DM Mono',monospace; font-size:11px; color:var(--text-faint);"></div>
     </div>
 
     <div id="intervize-chat" style="padding: 0 0 16px 0; min-height: 200px;">
-      <div class="empty-state">Uložte zápis a spusťte intervizi.</div>
+      <div class="empty-state">Zadej kód klienta a spusť intervizi.</div>
     </div>
 
     <div class="section" id="intervize-input-area" style="display:none;">
@@ -1336,36 +1347,77 @@ function resetZapis() {
 // ============================================================
 // INTERVIZE
 // ============================================================
-async function spustIntervizi() {
-  if (!lastZapis) {
-    setStatus('error', 'Nejprve ulož zápis');
+
+// Pomocná funkce — sestaví kontext všech sezení klienta
+function sestavKontextKlienta(kod) {
+  const vsechnyZaznamy = JSON.parse(localStorage.getItem('zaznamy') || '[]');
+  const zaznamy = vsechnyZaznamy
+    .filter(z => z.kod === kod)
+    .sort((a, b) => a.sezeni - b.sezeni);
+
+  if (zaznamy.length === 0) return null;
+
+  const verejnyDict = nactiVerejnyDict(kod);
+  const slovnikText = Object.keys(verejnyDict).length > 0
+    ? 'Pseudonymizační slovník:\n' + Object.entries(verejnyDict).map(([k,v]) => `${k} = ${v}`).join('\n')
+    : '';
+
+  const sezeniText = zaznamy.map(z =>
+    `=== SEZENÍ ${z.sezeni} (${z.datum}) ===\n${z.zapis}`
+  ).join('\n\n');
+
+  return { zaznamy, slovnikText, sezeniText };
+}
+
+async function spustIntervizi(predvolenyKod) {
+  const inputEl = document.getElementById('intervize-klient-kod');
+  const kod = (predvolenyKod || inputEl.value.trim()).toUpperCase();
+
+  if (!kod) {
+    document.getElementById('intervize-klient-info').textContent = 'Zadej kód klienta.';
     return;
   }
 
-  intervizeHistory = [];
+  inputEl.value = kod;
 
-  // Přepni na tab intervize
-  showScreen('intervize', document.getElementById('nav-intervize'));
-
-  document.getElementById('intervize-input-area').style.display = 'block';
+  const kontext = sestavKontextKlienta(kod);
+  if (!kontext) {
+    document.getElementById('intervize-klient-info').textContent = `Žádné záznamy pro ${kod}.`;
+    return;
+  }
 
   const anthropicKey = localStorage.getItem('anthropic_key');
+  if (!anthropicKey) {
+    document.getElementById('intervize-klient-info').textContent = 'Chybí Anthropic API klíč.';
+    return;
+  }
 
-  const systemPrompt = `Jsi zkušený biosyntézový terapeut a intervizní kolega. Tvůj kolega ti přinesl zápis sezení.
+  document.getElementById('intervize-klient-info').textContent =
+    `${kontext.zaznamy.length} sezení načteno (${kontext.zaznamy[0].datum} – ${kontext.zaznamy[kontext.zaznamy.length-1].datum})`;
+
+  intervizeHistory = [];
+  document.getElementById('intervize-input-area').style.display = 'block';
+
+  const systemPrompt = `Jsi zkušený biosyntézový terapeut a intervizní kolega.
+Tvůj kolega ti přinesl záznamy ze všech sezení s klientem.
 
 Vedeš živý intervizní rozhovor. Pravidla:
 - Kladeš JEDNU otázku najednou
 - Otázky míří na tělo, pole, vztah, přenos — ne na kognice
 - Zajímáš se o terapeuta jako o osobu, ne jen o techniku
-- Pracuješ s tím, co je živé a nedořešené v zápisu
+- Pracuješ s tím, co je živé, nedořešené, nebo opakující se napříč sezeními
+- Všímáš si longitudinálních vzorců — co se vrací, co se mění, co stagnuje
 - Biosyntézový rámec: grounding, centering, facing
 - Buď přítomný, lidský, ne akademický
 - Česky, tykej`;
 
-  const prvniZprava = `Přináším ti zápis sezení s klientem ${lastZapis.kod} (sezení č. ${lastZapis.sezeni}):\n\n${lastZapis.zapis}`;
+  const prvniZprava = `Přináším ti všechny záznamy o klientovi ${kod}.
+
+${kontext.slovnikText ? kontext.slovnikText + '\n\n' : ''}${kontext.sezeniText}
+
+Celkem ${kontext.zaznamy.length} sezení. Nejnovější je sezení ${kontext.zaznamy[kontext.zaznamy.length-1].sezeni}.`;
 
   intervizeHistory.push({ role: 'user', content: prvniZprava });
-
   renderIntervizeChat('loading');
 
   try {
@@ -1379,7 +1431,7 @@ Vedeš živý intervizní rozhovor. Pravidla:
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 500,
+        max_tokens: 600,
         system: systemPrompt,
         messages: intervizeHistory
       })
@@ -1466,6 +1518,14 @@ function renderIntervizeChat(state) {
   el.scrollTop = el.scrollHeight;
 }
 
+function spustInterviziZZapisu() {
+  // Po uložení zápisu — přepni na intervizi s aktuálním klientem
+  if (!lastZapis) return;
+  showScreen('intervize', document.getElementById('nav-intervize'));
+  document.getElementById('intervize-klient-kod').value = lastZapis.kod;
+  spustIntervizi(lastZapis.kod);
+}
+
 // ============================================================
 // ARCHIV
 // ============================================================
@@ -1478,14 +1538,47 @@ function renderArchiv() {
     return;
   }
 
-  el.innerHTML = zaznamy.map(z => `
-    <div class="history-item" onclick="zobrazZaznam(${z.id})">
-      <span class="history-item-code">${z.kod}</span>
-      <span class="history-item-date">${z.datum}</span>
-      <div style="font-family:'DM Mono',monospace; font-size:10px; color:var(--text-faint); margin-top:2px;">sezení ${z.sezeni}</div>
-      <div class="history-item-preview">${z.zapis.substring(0, 120)}...</div>
-    </div>
-  `).join('');
+  // Seskup podle klienta
+  const klienti = {};
+  zaznamy.forEach(z => {
+    if (!klienti[z.kod]) klienti[z.kod] = [];
+    klienti[z.kod].push(z);
+  });
+
+  let html = '';
+  Object.entries(klienti).forEach(([kod, sezeni]) => {
+    sezeni.sort((a,b) => b.sezeni - a.sezeni);
+    html += `<div style="padding:14px 20px 8px; border-bottom:1px solid var(--border);">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+        <div>
+          <span style="font-family:'DM Mono',monospace; font-size:13px; color:var(--accent);">${kod}</span>
+          <span style="font-family:'DM Mono',monospace; font-size:10px; color:var(--text-faint); margin-left:10px;">${sezeni.length} sezení</span>
+        </div>
+        <button class="btn btn-ghost" style="width:auto; padding:8px 12px; font-size:10px;"
+          onclick="spustInterviziZArchivu('${kod}')">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+          Intervize
+        </button>
+      </div>`;
+
+    sezeni.forEach(z => {
+      html += `<div class="history-item" style="padding:10px 0;" onclick="zobrazZaznam(${z.id})">
+        <span style="font-family:'DM Mono',monospace; font-size:11px; color:var(--text-dim);">Sezení ${z.sezeni}</span>
+        <span class="history-item-date">${z.datum}</span>
+        <div class="history-item-preview" style="margin-top:4px;">${z.zapis.substring(0, 100)}...</div>
+      </div>`;
+    });
+
+    html += `</div>`;
+  });
+
+  el.innerHTML = html;
+}
+
+function spustInterviziZArchivu(kod) {
+  showScreen('intervize', document.getElementById('nav-intervize'));
+  document.getElementById('intervize-klient-kod').value = kod;
+  spustIntervizi(kod);
 }
 
 function zobrazZaznam(id) {
