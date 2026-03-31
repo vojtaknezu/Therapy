@@ -511,7 +511,12 @@
     <div class="section">
       <div class="section-label">Klient & sezení</div>
       <div class="input-row">
-        <input type="text" id="klient-kod" placeholder="K001" maxlength="6" style="text-transform:uppercase; font-family:'DM Mono',monospace; font-size:16px;">
+        <div style="position:relative;">
+          <input type="text" id="klient-kod" placeholder="K001" maxlength="6"
+            style="text-transform:uppercase; font-family:'DM Mono',monospace; font-size:16px; width:100%;"
+            oninput="zobrazKlientSuggestions(this.value)" onblur="skryjSuggestions()" autocomplete="off">
+          <div id="klient-suggestions" style="display:none; position:absolute; top:100%; left:0; right:0; background:var(--surface2); border:1px solid var(--accent-dim); border-radius:0 0 4px 4px; z-index:50; max-height:160px; overflow-y:auto;"></div>
+        </div>
         <input type="number" id="sezeni-cislo" placeholder="č. sezení" min="1" max="999">
       </div>
     </div>
@@ -624,7 +629,7 @@
   <!-- SCREEN: ARCHIV -->
   <div class="screen" id="screen-archiv">
     <div id="archiv-list">
-      <div class="empty-state">Zatím žádné záznamy.</div>
+      <div class="empty-state">Zatím žádná sezení.</div>
     </div>
   </div>
 
@@ -666,13 +671,29 @@
   </button>
   <button onclick="showScreen('archiv', this)" id="nav-archiv">
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-    Archiv
+    Sezení
   </button>
   <button onclick="showScreen('nastaveni', this)" id="nav-nastaveni">
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 010 14.14M4.93 4.93a10 10 0 000 14.14"/></svg>
     Nastavení
   </button>
 </nav>
+
+<!-- MODAL: Přejmenování klienta -->
+<div class="modal-overlay" id="rename-modal" onclick="zavriRenameModal(event)">
+  <div class="modal">
+    <div class="modal-title">Přejmenovat klienta</div>
+    <div style="margin-bottom:12px;">
+      <div class="settings-label" style="margin-bottom:6px;">Nový kód</div>
+      <input type="text" id="rename-kod" maxlength="6"
+        style="text-transform:uppercase; font-family:'DM Mono',monospace; font-size:16px;">
+    </div>
+    <div class="gap8">
+      <button class="btn btn-primary" onclick="ulozPrejmenovat()">Uložit</button>
+      <button class="btn btn-ghost" onclick="document.getElementById('rename-modal').classList.remove('open')">Zrušit</button>
+    </div>
+  </div>
+</div>
 
 <!-- MODAL pro detail záznamu -->
 <div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
@@ -686,11 +707,23 @@
       </button>
     </div>
     <div class="modal-content" id="modal-content"></div>
-    <div style="margin-top:20px; padding-top:16px; border-top:1px solid var(--border);">
-      <button class="btn btn-danger" style="font-size:11px;" onclick="smazZaznam()">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-        Smazat tento záznam
+    <div style="margin-top:20px; padding-top:16px; border-top:1px solid var(--border); display:flex; gap:8px;">
+      <button class="btn btn-ghost" style="flex:1; font-size:11px;" onclick="prepniEditaci()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px;"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        Upravit
       </button>
+      <button class="btn btn-danger" style="flex:1; font-size:11px;" onclick="smazZaznam()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
+        Smazat
+      </button>
+    </div>
+    <!-- Editační plocha (skrytá) -->
+    <div id="modal-edit-area" style="display:none; margin-top:14px;">
+      <textarea id="modal-edit-text" style="min-height:200px; font-size:15px; line-height:1.7; font-style:italic; color:var(--text-dim); background:var(--surface2); border-color:var(--border);"></textarea>
+      <div style="display:flex; gap:8px; margin-top:8px;">
+        <button class="btn btn-success" style="flex:1; font-size:11px;" onclick="ulozEditaci()">Uložit změny</button>
+        <button class="btn btn-ghost" style="flex:1; font-size:11px;" onclick="zrusEditaci()">Zrušit</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1528,7 +1561,7 @@ Celkem ${kontext.zaznamy.length} sezení. Nejnovější je sezení ${kontext.zaz
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
-        max_tokens: 600,
+        max_tokens: 1200,
         system: systemPrompt,
         messages: intervizeHistory
       })
@@ -1574,7 +1607,7 @@ async function odpovedIntervize() {
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
-        max_tokens: 400,
+        max_tokens: 1000,
         system: systemPrompt,
         messages: intervizeHistory
       })
@@ -1610,9 +1643,16 @@ function renderIntervizeChat(state) {
         <div style="display:inline-block; background:var(--surface2); border-radius:12px 12px 2px 12px; padding:10px 14px; max-width:85%; font-size:15px; color:var(--text-dim); font-style:italic;">${msg.content}</div>
       </div>`;
     } else {
+      const cleaned = msg.content
+        .replace(/#{1,6}\s+/g, '')           // odstraň # hlavičky
+        .replace(/\*\*([^*]+)\*\*/g, '$1')   // odstraň **tučné**
+        .replace(/\*([^*]+)\*/g, '$1')        // odstraň *kurzíva*
+        .replace(/^[-*]\s+/gm, '• ')          // nahraď - odrážky za •
+        .replace(/\n{3,}/g, '\n\n')           // max 2 prázdné řádky
+        .trim();
       html += `<div style="padding:12px 20px;">
         <div style="font-family:'DM Mono',monospace; font-size:9px; color:var(--accent); letter-spacing:0.15em; margin-bottom:6px; text-transform:uppercase;">Supervizor</div>
-        <div style="font-size:17px; line-height:1.65; color:var(--text);">${msg.content}</div>
+        <div style="font-size:17px; line-height:1.65; color:var(--text); white-space:pre-wrap;">${cleaned}</div>
       </div>`;
     }
   }
@@ -1642,14 +1682,119 @@ function spustInterviziZZapisu() {
 }
 
 // ============================================================
-// ARCHIV
+// SEZENÍ (archiv)
 // ============================================================
+// ============================================================
+// AUTOCOMPLETE KÓDU KLIENTA
+// ============================================================
+function zobrazKlientSuggestions(hodnota) {
+  const el = document.getElementById('klient-suggestions');
+  const val = hodnota.trim().toUpperCase();
+  if (!val) { el.style.display = 'none'; return; }
+
+  const zaznamy = JSON.parse(localStorage.getItem('zaznamy') || '[]');
+  const kody = [...new Set(zaznamy.map(z => z.kod))];
+
+  // Filtruj kódy které začínají zadaným textem
+  const shody = kody.filter(k => k.startsWith(val));
+
+  if (shody.length === 0 || (shody.length === 1 && shody[0] === val)) {
+    el.style.display = 'none';
+    return;
+  }
+
+  let html = '';
+  shody.forEach(k => {
+    const privDict = nactiPrivatniDict(k);
+    const prvniJmeno = Object.values(privDict)[0];
+    const jmeno = prvniJmeno && prvniJmeno.length > 0 ? prvniJmeno[0] : '';
+    html += `<div style="padding:10px 14px; cursor:pointer; font-family:'DM Mono',monospace; font-size:13px; color:var(--text-dim); border-bottom:1px solid var(--border);"
+      onmousedown="vyberKlient('${k}')"
+      onmouseenter="this.style.background='var(--surface)'"
+      onmouseleave="this.style.background=''">
+      <span style="color:var(--accent);">${k}</span>
+      ${jmeno ? `<span style="font-family:'Crimson Pro',serif; font-size:14px; font-style:italic; margin-left:8px;">${jmeno}</span>` : ''}
+    </div>`;
+  });
+
+  el.innerHTML = html;
+  el.style.display = 'block';
+}
+
+function vyberKlient(kod) {
+  const input = document.getElementById('klient-kod');
+  input.value = kod;
+  document.getElementById('klient-suggestions').style.display = 'none';
+  // Automaticky doplň číslo příštího sezení
+  const zaznamy = JSON.parse(localStorage.getItem('zaznamy') || '[]');
+  const sezeniKlienta = zaznamy.filter(z => z.kod === kod);
+  if (sezeniKlienta.length > 0) {
+    const max = Math.max(...sezeniKlienta.map(z => z.sezeni));
+    document.getElementById('sezeni-cislo').value = max + 1;
+  }
+}
+
+function skryjSuggestions() {
+  setTimeout(() => {
+    document.getElementById('klient-suggestions').style.display = 'none';
+  }, 150);
+}
+
+// ============================================================
+// PŘEJMENOVÁNÍ KLIENTA
+// ============================================================
+let renamePuvodniKod = null;
+
+function otevriPrejimenovat(kod) {
+  renamePuvodniKod = kod;
+  document.getElementById('rename-kod').value = kod;
+  document.getElementById('rename-modal').classList.add('open');
+  setTimeout(() => document.getElementById('rename-kod').select(), 100);
+}
+
+function zavriRenameModal(e) {
+  if (e.target === document.getElementById('rename-modal')) {
+    document.getElementById('rename-modal').classList.remove('open');
+  }
+}
+
+function ulozPrejmenovat() {
+  const novyKod = document.getElementById('rename-kod').value.trim().toUpperCase();
+  if (!novyKod || !renamePuvodniKod || novyKod === renamePuvodniKod) {
+    document.getElementById('rename-modal').classList.remove('open');
+    return;
+  }
+
+  // Zkontroluj kolizi s existujícím kódem
+  const zaznamy = JSON.parse(localStorage.getItem('zaznamy') || '[]');
+  const existuje = zaznamy.some(z => z.kod === novyKod);
+  if (existuje) {
+    alert(`Kód ${novyKod} již existuje. Zvol jiný.`);
+    return;
+  }
+
+  // Přejmenuj všechny záznamy
+  zaznamy.forEach(z => { if (z.kod === renamePuvodniKod) z.kod = novyKod; });
+  localStorage.setItem('zaznamy', JSON.stringify(zaznamy));
+
+  // Přejmenuj slovníky
+  const verejny = localStorage.getItem(`dict_${renamePuvodniKod}`);
+  const privatni = localStorage.getItem(`priv_${renamePuvodniKod}`);
+  if (verejny) { localStorage.setItem(`dict_${novyKod}`, verejny); localStorage.removeItem(`dict_${renamePuvodniKod}`); }
+  if (privatni) { localStorage.setItem(`priv_${novyKod}`, privatni); localStorage.removeItem(`priv_${renamePuvodniKod}`); }
+
+  document.getElementById('rename-modal').classList.remove('open');
+  renamePuvodniKod = null;
+  renderArchiv();
+  setStatus('done', `Klient přejmenován na ${novyKod}`);
+}
+
 function renderArchiv() {
   const zaznamy = JSON.parse(localStorage.getItem('zaznamy') || '[]');
   const el = document.getElementById('archiv-list');
 
   if (zaznamy.length === 0) {
-    el.innerHTML = '<div class="empty-state">Zatím žádné záznamy.</div>';
+    el.innerHTML = '<div class="empty-state">Zatím žádná sezení.</div>';
     return;
   }
 
@@ -1663,30 +1808,52 @@ function renderArchiv() {
   let html = '';
   Object.entries(klienti).forEach(([kod, sezeni]) => {
     sezeni.sort((a,b) => b.sezeni - a.sezeni);
-    html += `<div style="padding:14px 20px 8px; border-bottom:1px solid var(--border);">
-      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
-        <div>
-          <span style="font-family:'DM Mono',monospace; font-size:13px; color:var(--accent);">${kod}</span>
-          <span style="font-family:'DM Mono',monospace; font-size:10px; color:var(--text-faint); margin-left:10px;">${sezeni.length} sezení</span>
+    const nejnovejsi = sezeni[0].datum;
+    const privDict = nactiPrivatniDict(kod);
+    const prvniJmeno = Object.values(privDict)[0];
+    const subtitle = prvniJmeno && prvniJmeno.length > 0 ? prvniJmeno[0] : '';
+
+    html += `<div style="margin:12px 16px; background:var(--surface); border:1px solid var(--border); border-radius:8px; overflow:hidden;">
+      <!-- Karta hlavička -->
+      <div style="padding:14px 16px 12px; border-bottom:1px solid var(--border);">
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+          <div style="display:flex; align-items:center; gap:8px; flex:1;">
+            <span style="font-family:'DM Mono',monospace; font-size:14px; color:var(--accent); letter-spacing:0.08em;">${kod}</span>
+            ${subtitle ? `<span style="font-size:14px; color:var(--text-dim); font-style:italic;">${subtitle}</span>` : ''}
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-family:'DM Mono',monospace; font-size:10px; color:var(--text-faint);">${sezeni.length}×</span>
+            <button style="background:none; border:none; cursor:pointer; padding:4px; color:var(--text-faint);"
+              onclick="event.stopPropagation(); otevriPrejimenovat('${kod}')" title="Přejmenovat klienta">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </button>
+          </div>
         </div>
-        <div style="display:flex; gap:6px;">
-          <button class="btn btn-ghost" style="width:auto; padding:8px 12px; font-size:10px;"
+        <div style="display:flex; gap:6px; margin-top:10px;">
+          <button class="btn btn-ghost" style="flex:1; padding:8px; font-size:10px;"
             onclick="spustInterviziZArchivu('${kod}')">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
             Supervize
           </button>
-          <button class="btn btn-danger" style="width:auto; padding:8px 10px; font-size:10px;"
+          <button class="btn btn-danger" style="width:auto; padding:8px 12px; font-size:10px;"
             onclick="smazKlienta('${kod}')">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
           </button>
         </div>
-      </div>`;
+      </div>
+      <!-- Seznam sezení -->`;
 
     sezeni.forEach(z => {
-      html += `<div class="history-item" style="padding:10px 0;" onclick="zobrazZaznam(${z.id})">
-        <span style="font-family:'DM Mono',monospace; font-size:11px; color:var(--text-dim);">Sezení ${z.sezeni}</span>
-        <span class="history-item-date">${z.datum}</span>
-        <div class="history-item-preview" style="margin-top:4px;">${z.zapis.substring(0, 100)}...</div>
+      const datum = new Date(z.datum).toLocaleDateString('cs-CZ', {day:'numeric', month:'short', year:'numeric'});
+      html += `<div style="padding:11px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; cursor:pointer; transition:background 0.15s;"
+        onclick="zobrazZaznam(${z.id})"
+        onmouseenter="this.style.background='var(--surface2)'"
+        onmouseleave="this.style.background=''">
+        <div>
+          <span style="font-family:'DM Mono',monospace; font-size:11px; color:var(--accent);">Sezení ${z.sezeni}</span>
+          <span style="font-family:'DM Mono',monospace; font-size:10px; color:var(--text-faint); margin-left:10px;">${datum}</span>
+        </div>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--text-faint); flex-shrink:0;"><polyline points="9 18 15 12 9 6"/></svg>
       </div>`;
     });
 
@@ -1717,6 +1884,8 @@ function zobrazZaznam(id) {
   document.getElementById('modal-btn-desifrovan').style.borderColor = '';
   document.getElementById('modal-btn-desifrovan').style.color = '';
   document.getElementById('modal-content').textContent = z.zapis;
+  document.getElementById('modal-content').style.display = 'block';
+  document.getElementById('modal-edit-area').style.display = 'none';
   document.getElementById('modal-overlay').classList.add('open');
 }
 
@@ -1747,15 +1916,26 @@ function prepniModalRezim(rezim) {
       return;
     }
 
-    // Nahraď kódy prvním reálným jménem z privátního slovníku
+    // Nahraď kódy — osoby z privátního slovníku, místa/instituce z veřejného
     let text = aktualniModalZaznam.zapis;
-    // Seřaď kódy od nejdelšího (P10 před P1)
-    const kody = Object.keys(privDict).sort((a,b) => b.length - a.length);
+    // Seskup všechny kódy: osoby z privDict, místa/instituce z veřejného slovníku
+    const vsechnyKody = {};
+    // Osoby — prvním jménem z privátního slovníku
+    Object.entries(privDict).forEach(([k, jmena]) => {
+      vsechnyKody[k] = jmena && jmena.length > 0 ? jmena[0] : k;
+    });
+    // Místa (M*) a instituce (Z*) — popisem z veřejného slovníku
+    Object.entries(verejnyDict).forEach(([k, popis]) => {
+      if ((k.startsWith('M') || k.startsWith('Z')) && !vsechnyKody[k]) {
+        vsechnyKody[k] = popis;
+      }
+    });
+    // Seřaď od nejdelšího kódu (P10 před P1)
+    const kody = Object.keys(vsechnyKody).sort((a,b) => b.length - a.length);
     kody.forEach(k => {
-      const jmena = privDict[k];
-      const hlavniJmeno = jmena && jmena.length > 0 ? jmena[0] : k;
+      const nahrada = vsechnyKody[k];
       const regex = new RegExp('\\b' + k + '\\b', 'g');
-      text = text.replace(regex, hlavniJmeno);
+      text = text.replace(regex, nahrada);
     });
 
     document.getElementById('modal-content').textContent = text;
@@ -1766,6 +1946,46 @@ function closeModal(e) {
   if (e.target === document.getElementById('modal-overlay')) {
     document.getElementById('modal-overlay').classList.remove('open');
   }
+}
+
+function prepniEditaci() {
+  if (!aktualniModalZaznam) return;
+  const editArea = document.getElementById('modal-edit-area');
+  const editText = document.getElementById('modal-edit-text');
+  const contentEl = document.getElementById('modal-content');
+  if (editArea.style.display === 'none') {
+    editText.value = aktualniModalZaznam.zapis;
+    editArea.style.display = 'block';
+    contentEl.style.display = 'none';
+  } else {
+    editArea.style.display = 'none';
+    contentEl.style.display = 'block';
+  }
+}
+
+function ulozEditaci() {
+  if (!aktualniModalZaznam) return;
+  const novyText = document.getElementById('modal-edit-text').value.trim();
+  if (!novyText) return;
+
+  let zaznamy = JSON.parse(localStorage.getItem('zaznamy') || '[]');
+  const idx = zaznamy.findIndex(z => z.id === aktualniModalZaznam.id);
+  if (idx === -1) return;
+
+  zaznamy[idx].zapis = novyText;
+  localStorage.setItem('zaznamy', JSON.stringify(zaznamy));
+  aktualniModalZaznam.zapis = novyText;
+
+  document.getElementById('modal-content').textContent = novyText;
+  document.getElementById('modal-content').style.display = 'block';
+  document.getElementById('modal-edit-area').style.display = 'none';
+  renderArchiv();
+  setStatus('done', 'Záznam upraven');
+}
+
+function zrusEditaci() {
+  document.getElementById('modal-edit-area').style.display = 'none';
+  document.getElementById('modal-content').style.display = 'block';
 }
 
 function smazZaznam() {
