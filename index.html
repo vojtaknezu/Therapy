@@ -556,6 +556,15 @@
       <button class="btn btn-ghost" onclick="resetZapis()">Nahrát znovu</button>
     </div>
 
+    <!-- Rychlé uložení bez strukturování -->
+    <div class="section gap8" id="quick-save-section" style="display:none;">
+      <div class="section-label">Nebo ulož přepis přímo</div>
+      <button class="btn btn-ghost" onclick="ulozBezStrukturovani()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+        Uložit jako surový zápis
+      </button>
+    </div>
+
     <!-- Výsledek -->
     <div id="result-section" style="display:none;">
       <div class="section">
@@ -765,69 +774,77 @@ function startRecording() {
     return;
   }
 
-  recognition = new SpeechRecognition();
-  recognition.lang = 'cs-CZ';
-  recognition.continuous = true;
-  recognition.interimResults = true;
-
+  // Reset stavu — jen jednou při prvním spuštění
   finalText = '';
   interimText = '';
+  isRecording = true;
+  timerSeconds = 0;
 
-  recognition.onstart = () => {
-    isRecording = true;
-    timerSeconds = 0;
-    document.getElementById('record-btn').classList.add('recording');
-    document.getElementById('record-label').textContent = 'Nahrávám — klepni pro zastavení';
-    document.getElementById('record-label').classList.add('active');
-    document.getElementById('transcription-section').style.display = 'block';
-    document.getElementById('manual-section').style.display = 'none';
-    document.getElementById('transcription-text').value = '';
-    document.getElementById('transcription-text').placeholder = 'Poslouchám...';
+  // UI inicializace — jen jednou
+  document.getElementById('record-btn').classList.add('recording');
+  document.getElementById('record-label').textContent = 'Nahrávám — klepni pro zastavení';
+  document.getElementById('record-label').classList.add('active');
+  document.getElementById('transcription-section').style.display = 'block';
+  document.getElementById('manual-section').style.display = 'none';
+  document.getElementById('transcription-text').value = '';
+  document.getElementById('transcription-text').placeholder = 'Poslouchám...';
+  setStatus('thinking', 'Nahrávám...');
 
-    timerInterval = setInterval(() => {
-      timerSeconds++;
-      const m = Math.floor(timerSeconds / 60);
-      const s = timerSeconds % 60;
-      document.getElementById('timer').textContent = `${m}:${s.toString().padStart(2,'0')}`;
-    }, 1000);
+  // Časovač — jen jednou
+  clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    timerSeconds++;
+    const m = Math.floor(timerSeconds / 60);
+    const s = timerSeconds % 60;
+    document.getElementById('timer').textContent = `${m}:${s.toString().padStart(2,'0')}`;
+  }, 1000);
 
-    setStatus('thinking', 'Nahrávám...');
-  };
+  function vytvorRecognition() {
+    const rec = new SpeechRecognition();
+    rec.lang = 'cs-CZ';
+    rec.continuous = true;
+    rec.interimResults = true;
 
-  recognition.onresult = (event) => {
-    let interim = '';
-    // Iterujeme jen nové výsledky této session — zabraňuje duplikátům při restartu
-    for (let i = event.resultIndex; i < event.results.length; i++) {
-      const transcript = event.results[i][0].transcript;
-      if (event.results[i].isFinal) {
-        finalText += transcript + ' ';
-      } else {
-        interim += transcript;
+    rec.onresult = (event) => {
+      let interim = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalText += transcript + ' ';
+        } else {
+          interim += transcript;
+        }
       }
-    }
-    const display = finalText + interim;
-    document.getElementById('transcription-text').value = display;
-    currentTranscript = display;
-    animujWaveformSimple();
-  };
+      const display = finalText + interim;
+      document.getElementById('transcription-text').value = display;
+      currentTranscript = display;
+      animujWaveformSimple();
+    };
 
-  recognition.onerror = (event) => {
-    if (event.error === 'not-allowed') {
-      setStatus('error', 'Přístup k mikrofonu zamítnut — povol ho v prohlížeči');
-    } else if (event.error === 'no-speech') {
-      // Ignoruj — continuous mode
-    } else {
-      setStatus('error', 'Chyba rozpoznávání: ' + event.error);
-    }
-  };
+    rec.onerror = (event) => {
+      if (event.error === 'not-allowed') {
+        setStatus('error', 'Přístup k mikrofonu zamítnut — povol ho v prohlížeči');
+        isRecording = false;
+        clearInterval(timerInterval);
+      } else if (event.error === 'no-speech' || event.error === 'aborted') {
+        // Ignoruj — restartujeme v onend
+      } else {
+        setStatus('error', 'Chyba rozpoznávání: ' + event.error);
+      }
+    };
 
-  recognition.onend = () => {
-    // Při restartu po tichu — finalText zůstane, nová session přidává od nuly
-    if (isRecording) {
-      recognition.start();
-    }
-  };
+    rec.onend = () => {
+      if (isRecording) {
+        // Restartuj bez resetování UI nebo textu
+        recognition = vytvorRecognition();
+        recognition.start();
+      }
+    };
 
+    return rec;
+  }
+
+  recognition = vytvorRecognition();
   recognition.start();
 }
 
@@ -850,7 +867,8 @@ function stopRecording() {
 
   if (currentTranscript) {
     document.getElementById('actions-section').style.display = 'block';
-    setStatus('done', 'Přepis dokončen — zkontroluj a strukturuj');
+    document.getElementById('quick-save-section').style.display = 'block';
+    setStatus('done', 'Přepis dokončen — strukturuj nebo ulož přímo');
   } else {
     setStatus('', 'Připraven');
   }
@@ -1339,9 +1357,45 @@ function aktivujManualniPrepis() {
   currentTranscript = text;
   if (text.length > 0) {
     document.getElementById('actions-section').style.display = 'block';
+    document.getElementById('quick-save-section').style.display = 'block';
   } else {
     document.getElementById('actions-section').style.display = 'none';
+    document.getElementById('quick-save-section').style.display = 'none';
   }
+}
+
+function ulozBezStrukturovani() {
+  const kod = document.getElementById('klient-kod').value.trim().toUpperCase();
+  const seseni = parseInt(document.getElementById('sezeni-cislo').value) || 1;
+  if (!kod) { setStatus('error', 'Zadej kód klienta'); return; }
+  if (!currentTranscript) return;
+
+  currentKlientKod = kod;
+  currentSezeniCislo = seseni;
+  currentZapis = currentTranscript;
+
+  const zaznam = {
+    id: Date.now(),
+    kod,
+    sezeni: seseni,
+    datum: new Date().toISOString().split('T')[0],
+    zapis: currentTranscript,
+    transcript: currentTranscript
+  };
+
+  const zaznamy = JSON.parse(localStorage.getItem('zaznamy') || '[]');
+  zaznamy.unshift(zaznam);
+  localStorage.setItem('zaznamy', JSON.stringify(zaznamy));
+  lastZapis = zaznam;
+
+  setStatus('done', `Uloženo ${kod} / sezení ${seseni}`);
+  document.getElementById('actions-section').style.display = 'none';
+  document.getElementById('quick-save-section').style.display = 'none';
+  document.getElementById('transcription-section').style.display = 'none';
+  document.getElementById('manual-section').style.display = 'block';
+  document.getElementById('timer').textContent = '0:00';
+  currentTranscript = '';
+  currentZapis = '';
 }
 
 function resetZapis() {
@@ -1350,6 +1404,7 @@ function resetZapis() {
   document.getElementById('manual-section').style.display = 'block';
   document.getElementById('manual-text').value = '';
   document.getElementById('actions-section').style.display = 'none';
+  document.getElementById('quick-save-section').style.display = 'none';
   document.getElementById('result-section').style.display = 'none';
   document.getElementById('timer').textContent = '0:00';
   setStatus('', 'Připraven');
