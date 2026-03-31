@@ -678,7 +678,20 @@
 <div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
   <div class="modal">
     <div class="modal-title" id="modal-title"></div>
+    <div style="display:flex; gap:8px; margin-bottom:14px;">
+      <button id="modal-btn-pseudo" class="btn btn-ghost" style="flex:1; padding:8px; font-size:10px;" onclick="prepniModalRezim('pseudo')">Pseudonymizovaný</button>
+      <button id="modal-btn-desifrovan" class="btn btn-ghost" style="flex:1; padding:8px; font-size:10px;" onclick="prepniModalRezim('desifrovan')">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+        S pravými jmény
+      </button>
+    </div>
     <div class="modal-content" id="modal-content"></div>
+    <div style="margin-top:20px; padding-top:16px; border-top:1px solid var(--border);">
+      <button class="btn btn-danger" style="font-size:11px;" onclick="smazZaznam()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+        Smazat tento záznam
+      </button>
+    </div>
   </div>
 </div>
 
@@ -701,6 +714,7 @@ let timerInterval = null;
 let timerSeconds = 0;
 let interimText = '';
 let finalText = '';
+let finalTextBase = '';
 
 let currentTranscript = '';
 let currentZapis = '';
@@ -776,6 +790,7 @@ function startRecording() {
 
   // Reset stavu — jen jednou při prvním spuštění
   finalText = '';
+  finalTextBase = '';
   interimText = '';
   isRecording = true;
   timerSeconds = 0;
@@ -802,22 +817,31 @@ function startRecording() {
   function vytvorRecognition() {
     const rec = new SpeechRecognition();
     rec.lang = 'cs-CZ';
-    rec.continuous = true;
+    rec.continuous = false;  // false = jedna utterance, pak onend — čistší restart
     rec.interimResults = true;
 
     rec.onresult = (event) => {
+      // Přečti CELÝ event.results od 0 — ale rozlišuj finální a interim
+      // finalText = součet všech isFinal z TÉTO session (neakumulujeme přes restart)
+      let sessionFinal = '';
       let interim = '';
-      for (let i = event.resultIndex; i < event.results.length; i++) {
+      for (let i = 0; i < event.results.length; i++) {
         const transcript = event.results[i][0].transcript;
         if (event.results[i].isFinal) {
-          finalText += transcript + ' ';
+          sessionFinal += transcript + ' ';
         } else {
           interim += transcript;
         }
       }
-      const display = finalText + interim;
+      // finalTextBase = vše co bylo finální před touto session
+      const display = finalTextBase + sessionFinal + interim;
+      // Aktualizuj průběžně zobrazenou hodnotu
       document.getElementById('transcription-text').value = display;
       currentTranscript = display;
+      // Po finalizaci ulož do base pro příští session
+      if (sessionFinal) {
+        finalText = finalTextBase + sessionFinal;
+      }
       animujWaveformSimple();
     };
 
@@ -835,7 +859,8 @@ function startRecording() {
 
     rec.onend = () => {
       if (isRecording) {
-        // Restartuj bez resetování UI nebo textu
+        // Před restartem uzamkni dosud finalizovaný text jako základ
+        finalTextBase = finalText;
         recognition = vytvorRecognition();
         recognition.start();
       }
@@ -923,11 +948,17 @@ async function strukturujZapis() {
   const kod = document.getElementById('klient-kod').value.trim().toUpperCase();
   const seseni = parseInt(document.getElementById('sezeni-cislo').value) || 1;
 
-  if (!kod) { setStatus('error', 'Zadej kód klienta'); return; }
-  if (!currentTranscript) { setStatus('error', 'Nejprve nahraj poznámku'); return; }
+  // Synchronizuj currentTranscript z textarea (pro případ že byl text editován ručně)
+  const taVal = document.getElementById('transcription-text').value.trim();
+  const manVal = document.getElementById('manual-text') ? document.getElementById('manual-text').value.trim() : '';
+  if (taVal) currentTranscript = taVal;
+  else if (manVal) currentTranscript = manVal;
+
+  if (!kod) { setStatus('error', 'Zadej kód klienta'); alert('Zadej kód klienta (např. K001)'); return; }
+  if (!currentTranscript) { setStatus('error', 'Přepis je prázdný'); alert('Nejprve nahraj nebo zadej text zápisku.'); return; }
 
   const anthropicKey = localStorage.getItem('anthropic_key');
-  if (!anthropicKey) { setStatus('error', 'Chybí Anthropic API klíč — nastav v Nastavení'); return; }
+  if (!anthropicKey) { setStatus('error', 'Chybí Anthropic API klíč'); alert('V Nastavení chybí Anthropic API klíč.'); return; }
 
   currentKlientKod = kod;
   currentSezeniCislo = seseni;
@@ -1037,6 +1068,7 @@ Hodnoty jistota: "jistá" | "nejistá" | "nová"`;
 
   } catch (err) {
     setStatus('error', 'Chyba: ' + err.message);
+    alert('Chyba při strukturování: ' + err.message);
     document.getElementById('actions-section').style.display = 'block';
   }
 }
@@ -1504,11 +1536,17 @@ Celkem ${kontext.zaznamy.length} sezení. Nejnovější je sezení ${kontext.zaz
     });
 
     const data = await resp.json();
+    if (!data.content || !data.content[0] || !data.content[0].text) {
+      console.error('Neočekávaná odpověď API:', data);
+      renderIntervizeChat('error');
+      return;
+    }
     const odpoved = data.content[0].text;
     intervizeHistory.push({ role: 'assistant', content: odpoved });
     renderIntervizeChat();
 
   } catch (err) {
+    console.error('Chyba intervize:', err);
     renderIntervizeChat('error');
   }
 }
@@ -1544,11 +1582,17 @@ async function odpovedIntervize() {
     });
 
     const data = await resp.json();
+    if (!data.content || !data.content[0] || !data.content[0].text) {
+      console.error('Neočekávaná odpověď API:', data);
+      renderIntervizeChat('error');
+      return;
+    }
     const odpoved = data.content[0].text;
     intervizeHistory.push({ role: 'assistant', content: odpoved });
     renderIntervizeChat();
 
   } catch (err) {
+    console.error('Chyba odpovědi intervize:', err);
     renderIntervizeChat('error');
   }
 }
@@ -1556,7 +1600,8 @@ async function odpovedIntervize() {
 function renderIntervizeChat(state) {
   const el = document.getElementById('intervize-chat');
 
-  const messages = intervizeHistory.filter(m => m.role !== 'user' || intervizeHistory.indexOf(m) > 0);
+  // Přeskočit první zprávu (index 0) — je to kontext sezení, ne zobrazitelný dialog
+  const messages = intervizeHistory.slice(1);
 
   let html = '';
 
@@ -1576,7 +1621,12 @@ function renderIntervizeChat(state) {
   if (state === 'loading') {
     html += `<div style="padding:12px 20px;">
       <div style="font-family:'DM Mono',monospace; font-size:9px; color:var(--accent); letter-spacing:0.15em; margin-bottom:6px; text-transform:uppercase;">Intervizor</div>
-      <div style="color:var(--text-faint); font-style:italic;">...</div>
+      <div style="color:var(--text-faint); font-style:italic; animation: blink 1s infinite;">...</div>
+    </div>`;
+  } else if (state === 'error') {
+    html += `<div style="padding:12px 20px;">
+      <div style="font-family:'DM Mono',monospace; font-size:9px; color:var(--danger); letter-spacing:0.15em; margin-bottom:6px; text-transform:uppercase;">Chyba</div>
+      <div style="font-size:15px; color:var(--danger); font-style:italic;">Nepodařilo se načíst odpověď. Zkontroluj API klíč a zkus znovu.</div>
     </div>`;
   }
 
@@ -1620,11 +1670,17 @@ function renderArchiv() {
           <span style="font-family:'DM Mono',monospace; font-size:13px; color:var(--accent);">${kod}</span>
           <span style="font-family:'DM Mono',monospace; font-size:10px; color:var(--text-faint); margin-left:10px;">${sezeni.length} sezení</span>
         </div>
-        <button class="btn btn-ghost" style="width:auto; padding:8px 12px; font-size:10px;"
-          onclick="spustInterviziZArchivu('${kod}')">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-          Intervize
-        </button>
+        <div style="display:flex; gap:6px;">
+          <button class="btn btn-ghost" style="width:auto; padding:8px 12px; font-size:10px;"
+            onclick="spustInterviziZArchivu('${kod}')">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+            Intervize
+          </button>
+          <button class="btn btn-danger" style="width:auto; padding:8px 10px; font-size:10px;"
+            onclick="smazKlienta('${kod}')">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
+          </button>
+        </div>
       </div>`;
 
     sezeni.forEach(z => {
@@ -1647,20 +1703,99 @@ function spustInterviziZArchivu(kod) {
   spustIntervizi(kod);
 }
 
+let aktualniModalZaznam = null;
+
 function zobrazZaznam(id) {
   const zaznamy = JSON.parse(localStorage.getItem('zaznamy') || '[]');
   const z = zaznamy.find(x => x.id === id);
   if (!z) return;
 
+  aktualniModalZaznam = z;
   document.getElementById('modal-title').textContent = `${z.kod} — sezení ${z.sezeni} — ${z.datum}`;
+  // Výchozí zobrazení: pseudonymizovaný
+  document.getElementById('modal-btn-pseudo').style.borderColor = 'var(--accent)';
+  document.getElementById('modal-btn-pseudo').style.color = 'var(--accent)';
+  document.getElementById('modal-btn-desifrovan').style.borderColor = '';
+  document.getElementById('modal-btn-desifrovan').style.color = '';
   document.getElementById('modal-content').textContent = z.zapis;
   document.getElementById('modal-overlay').classList.add('open');
+}
+
+function prepniModalRezim(rezim) {
+  if (!aktualniModalZaznam) return;
+  const pseudoBtn = document.getElementById('modal-btn-pseudo');
+  const desiBtn = document.getElementById('modal-btn-desifrovan');
+
+  if (rezim === 'pseudo') {
+    pseudoBtn.style.borderColor = 'var(--accent)';
+    pseudoBtn.style.color = 'var(--accent)';
+    desiBtn.style.borderColor = '';
+    desiBtn.style.color = '';
+    document.getElementById('modal-content').textContent = aktualniModalZaznam.zapis;
+  } else {
+    desiBtn.style.borderColor = 'var(--accent)';
+    desiBtn.style.color = 'var(--accent)';
+    pseudoBtn.style.borderColor = '';
+    pseudoBtn.style.color = '';
+
+    const kod = aktualniModalZaznam.kod;
+    const privDict = nactiPrivatniDict(kod);
+    const verejnyDict = nactiVerejnyDict(kod);
+
+    if (Object.keys(privDict).length === 0) {
+      document.getElementById('modal-content').textContent =
+        aktualniModalZaznam.zapis + '
+
+[Žádný privátní slovník — jména nebyla uložena lokálně]';
+      return;
+    }
+
+    // Nahraď kódy prvním reálným jménem z privátního slovníku
+    let text = aktualniModalZaznam.zapis;
+    // Seřaď kódy od nejdelšího (P10 před P1)
+    const kody = Object.keys(privDict).sort((a,b) => b.length - a.length);
+    kody.forEach(k => {
+      const jmena = privDict[k];
+      const hlavniJmeno = jmena && jmena.length > 0 ? jmena[0] : k;
+      const regex = new RegExp('\b' + k + '\b', 'g');
+      text = text.replace(regex, hlavniJmeno);
+    });
+
+    document.getElementById('modal-content').textContent = text;
+  }
 }
 
 function closeModal(e) {
   if (e.target === document.getElementById('modal-overlay')) {
     document.getElementById('modal-overlay').classList.remove('open');
   }
+}
+
+function smazZaznam() {
+  if (!aktualniModalZaznam) return;
+  if (!confirm(`Smazat záznam sezení ${aktualniModalZaznam.sezeni} klienta ${aktualniModalZaznam.kod}?`)) return;
+
+  let zaznamy = JSON.parse(localStorage.getItem('zaznamy') || '[]');
+  zaznamy = zaznamy.filter(z => z.id !== aktualniModalZaznam.id);
+  localStorage.setItem('zaznamy', JSON.stringify(zaznamy));
+
+  document.getElementById('modal-overlay').classList.remove('open');
+  aktualniModalZaznam = null;
+  renderArchiv();
+  setStatus('done', 'Záznam smazán');
+}
+
+function smazKlienta(kod) {
+  if (!confirm(`Smazat všechny záznamy klienta ${kod} včetně slovníku?`)) return;
+
+  let zaznamy = JSON.parse(localStorage.getItem('zaznamy') || '[]');
+  zaznamy = zaznamy.filter(z => z.kod !== kod);
+  localStorage.setItem('zaznamy', JSON.stringify(zaznamy));
+  localStorage.removeItem(`dict_${kod}`);
+  localStorage.removeItem(`priv_${kod}`);
+
+  renderArchiv();
+  setStatus('done', `Klient ${kod} smazán`);
 }
 
 // ============================================================
