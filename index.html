@@ -512,8 +512,8 @@
       <div class="section-label">Klient & sezení</div>
       <div class="input-row">
         <div style="position:relative;">
-          <input type="text" id="klient-kod" placeholder="K001" maxlength="6"
-            style="text-transform:uppercase; font-family:'DM Mono',monospace; font-size:16px; width:100%;"
+          <input type="text" id="klient-kod" placeholder="Jana" maxlength="20"
+            style="font-family:'DM Mono',monospace; font-size:16px; width:100%;"
             oninput="zobrazKlientSuggestions(this.value)" onblur="skryjSuggestions()" autocomplete="off">
           <div id="klient-suggestions" style="display:none; position:absolute; top:100%; left:0; right:0; background:var(--surface2); border:1px solid var(--accent-dim); border-radius:0 0 4px 4px; z-index:50; max-height:160px; overflow-y:auto;"></div>
         </div>
@@ -600,10 +600,12 @@
       <div class="section-label">Supervizní konzultace</div>
       <p style="font-size:15px; color:var(--text-dim); font-style:italic; margin-bottom:14px;">Claude jako supervizor — pracuje se všemi záznamy vybraného klienta. Ptej se na doporučení, tipy k procesu, slepá místa.</p>
       <div class="input-row" style="grid-template-columns: 1fr auto; gap:10px; align-items:flex-end;">
-        <div>
+        <div style="position:relative;">
           <div class="settings-label" style="margin-bottom:6px;">Klient</div>
-          <input type="text" id="intervize-klient-kod" placeholder="K001" maxlength="6"
-            style="text-transform:uppercase; font-family:'DM Mono',monospace; font-size:16px;">
+          <input type="text" id="intervize-klient-kod" placeholder="Jana" maxlength="20"
+            style="font-family:'DM Mono',monospace; font-size:16px; width:100%;"
+            oninput="zobrazSupervizeSuggestions(this.value)" onblur="skryjSupervizeSuggestions()" autocomplete="off">
+          <div id="supervize-suggestions" style="display:none; position:absolute; top:100%; left:0; right:0; background:var(--surface2); border:1px solid var(--accent-dim); border-radius:0 0 4px 4px; z-index:50; max-height:160px; overflow-y:auto;"></div>
         </div>
         <button class="btn btn-primary" style="width:auto; padding:14px 18px; white-space:nowrap;" onclick="spustIntervizi()">
           Spustit
@@ -613,7 +615,7 @@
     </div>
 
     <div id="intervize-chat" style="padding: 0 0 16px 0; min-height: 200px;">
-      <div class="empty-state">Zadej kód klienta a spusť supervizi.</div>
+      <div class="empty-state">Zadej jméno klienta a spusť supervizi.</div>
     </div>
 
     <div class="section" id="intervize-input-area" style="display:none;">
@@ -665,13 +667,13 @@
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>
     Zápis
   </button>
-  <button onclick="showScreen('intervize', this)" id="nav-intervize">
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-    Supervize
-  </button>
   <button onclick="showScreen('archiv', this)" id="nav-archiv">
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
     Sezení
+  </button>
+  <button onclick="showScreen('intervize', this)" id="nav-intervize">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+    Supervize
   </button>
   <button onclick="showScreen('nastaveni', this)" id="nav-nastaveni">
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 010 14.14M4.93 4.93a10 10 0 000 14.14"/></svg>
@@ -978,7 +980,7 @@ function sestavDictKontextProClaude(verejnyDict) {
 // STRUKTUROVÁNÍ + PSEUDONYMIZACE — FÁZE 1: detekce osob
 // ============================================================
 async function strukturujZapis() {
-  const kod = document.getElementById('klient-kod').value.trim().toUpperCase();
+  const kod = document.getElementById('klient-kod').value.trim();
   const seseni = parseInt(document.getElementById('sezeni-cislo').value) || 1;
 
   // Synchronizuj currentTranscript z textarea (pro případ že byl text editován ručně)
@@ -1008,7 +1010,7 @@ async function strukturujZapis() {
   // Privátní dict posíláme pro rozpoznání variant — jde do API, ale jen jako hint pro matching
   const privatniHint = Object.keys(privatniDict).length > 0
     ? '\n\nZnámé varianty jmen (pro rozpoznání totožnosti):\n' +
-      Object.entries(privatniDict).map(([k,v]) => `${k}: ${v.join(', ')}`).join('\n')
+      Object.entries(privatniDict).map(([k,v]) => { const z = privZaznam(privatniDict, k); return `${k}: ${z.jmena.join(', ')}`; }).join('\n')
     : '';
 
   const faze1Prompt = `Jsi asistent biosyntézového terapeuta. Analyzuj text a identifikuj všechny osoby.
@@ -1204,10 +1206,13 @@ function aplikujResolutions(nejiste) {
     if (res.typ === 'same' && res.existujiciKod) {
       // Přidej jména jako varianty do privátního slovníku
       const privDict = nactiPrivatniDict(pendingParams.kod);
-      if (!privDict[res.existujiciKod]) privDict[res.existujiciKod] = [];
+      if (!privDict[res.existujiciKod]) privDict[res.existujiciKod] = { jmena: [], pohlavi: '' };
+      if (!privDict[res.existujiciKod].jmena) {
+        privDict[res.existujiciKod] = { jmena: privDict[res.existujiciKod], pohlavi: '' };
+      }
       const novaJmena = res.jmena.split(', ');
       novaJmena.forEach(j => {
-        if (!privDict[res.existujiciKod].includes(j)) privDict[res.existujiciKod].push(j);
+        if (!privDict[res.existujiciKod].jmena.includes(j)) privDict[res.existujiciKod].jmena.push(j);
       });
       ulozPrivatniDict(pendingParams.kod, privDict);
       // Aktualizuj detekci
@@ -1249,13 +1254,20 @@ async function faze2Strukturuj(detekce, kod, seseni, dnes, verejnyDict, privatni
       const novyKod = `P${novyKodIdx.P++}`;
       o.existujici_kod = novyKod;
       novyVerejnyDict[novyKod] = `${o.role || 'osoba'}, ${o.pohlavi || '?'}, ${o.vek || '?'}`;
-      novyPrivatniDict[novyKod] = o.jmena_v_textu || [];
+      novyPrivatniDict[novyKod] = { jmena: o.jmena_v_textu || [], pohlavi: o.pohlavi || '' };
     } else if (o.existujici_kod && o.jmena_v_textu) {
       // Přidej varianty jmen do privátního slovníku
-      if (!novyPrivatniDict[o.existujici_kod]) novyPrivatniDict[o.existujici_kod] = [];
+      if (!novyPrivatniDict[o.existujici_kod]) novyPrivatniDict[o.existujici_kod] = { jmena: [], pohlavi: '' };
+      if (!novyPrivatniDict[o.existujici_kod].jmena) {
+        // Migrace starého formátu (pole → objekt)
+        novyPrivatniDict[o.existujici_kod] = { jmena: novyPrivatniDict[o.existujici_kod], pohlavi: '' };
+      }
       o.jmena_v_textu.forEach(j => {
-        if (!novyPrivatniDict[o.existujici_kod].includes(j)) novyPrivatniDict[o.existujici_kod].push(j);
+        if (!novyPrivatniDict[o.existujici_kod].jmena.includes(j)) novyPrivatniDict[o.existujici_kod].jmena.push(j);
       });
+      if (o.pohlavi && !novyPrivatniDict[o.existujici_kod].pohlavi) {
+        novyPrivatniDict[o.existujici_kod].pohlavi = o.pohlavi;
+      }
     }
   });
 
@@ -1275,8 +1287,17 @@ async function faze2Strukturuj(detekce, kod, seseni, dnes, verejnyDict, privatni
     }
   });
 
+  // Uložit klienta do privátního slovníku pod kódem KLIENT
+  if (!novyPrivatniDict['KLIENT']) {
+    novyPrivatniDict['KLIENT'] = { jmena: [kod], pohlavi: '' };
+  } else {
+    const kz = privZaznam(novyPrivatniDict, 'KLIENT');
+    if (!kz.jmena.includes(kod)) kz.jmena.push(kod);
+    novyPrivatniDict['KLIENT'] = kz;
+  }
+
   // Sestav substituční mapu: skutečné jméno → kód
-  let substituce = `Klient ${kod} = ${kod}\n`;
+  let substituce = `${kod} = KLIENT (nahraď všechny výskyty jména klienta kódem KLIENT)\n`;
   (detekce.osoby || []).forEach(o => {
     if (o.existujici_kod && o.jmena_v_textu) {
       o.jmena_v_textu.forEach(j => { substituce += `${j} → ${o.existujici_kod}\n`; });
@@ -1294,41 +1315,43 @@ async function faze2Strukturuj(detekce, kod, seseni, dnes, verejnyDict, privatni
 SUBSTITUCE (nahraď VŠECHNY výskyty, včetně skloňovaných tvarů):
 ${substituce}
 
-Vrať POUZE strukturovaný Markdown zápis:
+DŮLEŽITÉ: Žádné markdown — žádné **, *, ##. Pouze prostý text.
+
+Vrať POUZE strukturovaný zápis (hlavičky VELKÝMI písmeny, bez ##):
 
 ---
-klient: ${kod}
+klient: KLIENT
 datum: ${dnes}
 sezeni: ${seseni}
 ---
 
-## Reaktivace
+REAKTIVACE
 [spontánní první dojem terapeuta — zachovej jeho slova]
 
-## Narativ a téma
+NARATIV A TÉMA
 [co přinesl klient, jak se téma vyvíjelo, co zůstalo otevřené]
 
-## Tělesné procesy
+TĚLESNÉ PROCESY
 [pozorování těla klienta, somatické vzorce, intervence]
 
-## Kvalita kontaktu a pole
+KVALITA KONTAKTU A POLE
 [živost kontaktu, přerušení, atmosféra]
 
-## Přenos a protipřenos
+PŘENOS A PROTIPŘENOS
 [pocity terapeuta, dynamika přenosu]
 
-## Klíčové momenty
+KLÍČOVÉ MOMENTY
 [překvapení, průlomy, co znepokojilo]
 
-## Biosyntézový rám
+BIOSYNTÉZOVÝ RÁM
 Grounding: [uzemnění, kontakt se zemí]
 Centering: [vnitřní střed, koherence]
 Facing: [kontakt s realitou, druhým]
 
-## Záměr pro příští sezení
+ZÁMĚR PRO PŘÍŠTÍ SEZENÍ
 [co otevřít, na co si dát pozor]
 
-## Poznámky pro supervizi
+POZNÁMKY PRO SUPERVIZI
 [otázky, slepá místa, co přinést supervizorovi]`;
 
   try {
@@ -1357,6 +1380,7 @@ Facing: [kontakt s realitou, druhým]
     ulozVerejnyDict(kod, novyVerejnyDict);
     ulozPrivatniDict(kod, novyPrivatniDict);
 
+    currentZapis = stripMarkdown(currentZapis);
     document.getElementById('result-preview').textContent = currentZapis;
     renderDictPreview(novyVerejnyDict, novyPrivatniDict);
     document.getElementById('result-section').style.display = 'block';
@@ -1377,11 +1401,13 @@ function renderDictPreview(verejnyDict, privatniDict) {
     return;
   }
   el.innerHTML = Object.entries(verejnyDict).map(([k,v]) => {
-    const varianty = priv[k] ? priv[k].join(', ') : '';
+    const z = privZaznam(priv, k);
+    const varianty = z.jmena.join(', ');
+    const pohlaviLabel = z.pohlavi ? ` · ${z.pohlavi}` : '';
     return `<div class="dict-entry">
       <span class="dict-code">${k}</span>
       <div style="flex:1;">
-        <div class="dict-name">${v}</div>
+        <div class="dict-name">${v}${pohlaviLabel}</div>
         ${varianty ? `<div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--text-faint);margin-top:2px;">${varianty}</div>` : ''}
       </div>
     </div>`;
@@ -1430,7 +1456,7 @@ function aktivujManualniPrepis() {
 }
 
 function ulozBezStrukturovani() {
-  const kod = document.getElementById('klient-kod').value.trim().toUpperCase();
+  const kod = document.getElementById('klient-kod').value.trim();
   const seseni = parseInt(document.getElementById('sezeni-cislo').value) || 1;
   if (!kod) { setStatus('error', 'Zadej kód klienta'); return; }
   if (!currentTranscript) return;
@@ -1502,7 +1528,7 @@ function sestavKontextKlienta(kod) {
 
 async function spustIntervizi(predvolenyKod) {
   const inputEl = document.getElementById('intervize-klient-kod');
-  const kod = (predvolenyKod || inputEl.value.trim()).toUpperCase();
+  const kod = (predvolenyKod || inputEl.value.trim());
 
   if (!kod) {
     document.getElementById('intervize-klient-info').textContent = 'Zadej kód klienta.';
@@ -1513,7 +1539,7 @@ async function spustIntervizi(predvolenyKod) {
 
   const kontext = sestavKontextKlienta(kod);
   if (!kontext) {
-    document.getElementById('intervize-klient-info').textContent = `Žádné záznamy pro ${kod}.`;
+    document.getElementById('intervize-klient-info').textContent = `Žádné záznamy pro ${kod}. Zkontroluj jméno.`;
     return;
   }
 
@@ -1687,6 +1713,47 @@ function spustInterviziZZapisu() {
 // ============================================================
 // AUTOCOMPLETE KÓDU KLIENTA
 // ============================================================
+function zobrazSupervizeSuggestions(hodnota) {
+  const el = document.getElementById('supervize-suggestions');
+  const val = hodnota.trim();
+  if (!val) { el.style.display = 'none'; return; }
+
+  const zaznamy = JSON.parse(localStorage.getItem('zaznamy') || '[]');
+  const kody = [...new Set(zaznamy.map(z => z.kod))];
+  const shody = kody.filter(k => k.toLowerCase().startsWith(val.toLowerCase()));
+
+  if (shody.length === 0 || (shody.length === 1 && shody[0] === val)) {
+    el.style.display = 'none'; return;
+  }
+
+  let html = '';
+  shody.forEach(k => {
+    const pocet = zaznamy.filter(z => z.kod === k).length;
+    html += `<div style="padding:10px 14px; cursor:pointer; border-bottom:1px solid var(--border);"
+      onmousedown="vyberSupervizeKlient('${k}')"
+      onmouseenter="this.style.background='var(--surface)'"
+      onmouseleave="this.style.background=''">
+      <span style="font-family:'DM Mono',monospace; font-size:13px; color:var(--accent);">${k}</span>
+      <span style="font-family:'DM Mono',monospace; font-size:10px; color:var(--text-faint); margin-left:8px;">${pocet} sezení</span>
+    </div>`;
+  });
+
+  el.innerHTML = html;
+  el.style.display = 'block';
+}
+
+function vyberSupervizeKlient(kod) {
+  document.getElementById('intervize-klient-kod').value = kod;
+  document.getElementById('supervize-suggestions').style.display = 'none';
+}
+
+function skryjSupervizeSuggestions() {
+  setTimeout(() => {
+    const el = document.getElementById('supervize-suggestions');
+    if (el) el.style.display = 'none';
+  }, 150);
+}
+
 function zobrazKlientSuggestions(hodnota) {
   const el = document.getElementById('klient-suggestions');
   const val = hodnota.trim().toUpperCase();
@@ -1705,9 +1772,10 @@ function zobrazKlientSuggestions(hodnota) {
 
   let html = '';
   shody.forEach(k => {
-    const privDict = nactiPrivatniDict(k);
-    const prvniJmeno = Object.values(privDict)[0];
-    const jmeno = prvniJmeno && prvniJmeno.length > 0 ? prvniJmeno[0] : '';
+    const privDictAC = nactiPrivatniDict(k);
+    const prvniKlic = Object.keys(privDictAC).find(pk => pk === 'KLIENT') || Object.keys(privDictAC)[0];
+    const prvniZ = prvniKlic ? privZaznam(privDictAC, prvniKlic) : null;
+    const jmeno = prvniZ && prvniZ.jmena.length > 0 ? prvniZ.jmena[0] : '';
     html += `<div style="padding:10px 14px; cursor:pointer; font-family:'DM Mono',monospace; font-size:13px; color:var(--text-dim); border-bottom:1px solid var(--border);"
       onmousedown="vyberKlient('${k}')"
       onmouseenter="this.style.background='var(--surface)'"
@@ -1759,7 +1827,7 @@ function zavriRenameModal(e) {
 }
 
 function ulozPrejmenovat() {
-  const novyKod = document.getElementById('rename-kod').value.trim().toUpperCase();
+  const novyKod = document.getElementById('rename-kod').value.trim();
   if (!novyKod || !renamePuvodniKod || novyKod === renamePuvodniKod) {
     document.getElementById('rename-modal').classList.remove('open');
     return;
@@ -1789,6 +1857,31 @@ function ulozPrejmenovat() {
   setStatus('done', `Klient přejmenován na ${novyKod}`);
 }
 
+function privZaznam(privDict, kod) {
+  // Migrace: starý formát byl pole, nový je {jmena, pohlavi}
+  const z = privDict[kod];
+  if (!z) return { jmena: [], pohlavi: '' };
+  if (Array.isArray(z)) return { jmena: z, pohlavi: '' };
+  return { jmena: z.jmena || [], pohlavi: z.pohlavi || '' };
+}
+
+function pohlaviZajmeno(pohlavi) {
+  if (pohlavi === 'muž' || pohlavi === 'man') return 'on';
+  if (pohlavi === 'žena' || pohlavi === 'woman') return 'ona';
+  return '';
+}
+
+function stripMarkdown(text) {
+  if (!text) return '';
+  return text
+    .replace(/#{1,6}\s+/g, '')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/^[-*]\s+/gm, '\u2022 ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function renderArchiv() {
   const zaznamy = JSON.parse(localStorage.getItem('zaznamy') || '[]');
   const el = document.getElementById('archiv-list');
@@ -1809,17 +1902,12 @@ function renderArchiv() {
   Object.entries(klienti).forEach(([kod, sezeni]) => {
     sezeni.sort((a,b) => b.sezeni - a.sezeni);
     const nejnovejsi = sezeni[0].datum;
-    const privDict = nactiPrivatniDict(kod);
-    const prvniJmeno = Object.values(privDict)[0];
-    const subtitle = prvniJmeno && prvniJmeno.length > 0 ? prvniJmeno[0] : '';
-
     html += `<div style="margin:12px 16px; background:var(--surface); border:1px solid var(--border); border-radius:8px; overflow:hidden;">
       <!-- Karta hlavička -->
       <div style="padding:14px 16px 12px; border-bottom:1px solid var(--border);">
         <div style="display:flex; align-items:center; justify-content:space-between;">
           <div style="display:flex; align-items:center; gap:8px; flex:1;">
             <span style="font-family:'DM Mono',monospace; font-size:14px; color:var(--accent); letter-spacing:0.08em;">${kod}</span>
-            ${subtitle ? `<span style="font-size:14px; color:var(--text-dim); font-style:italic;">${subtitle}</span>` : ''}
           </div>
           <div style="display:flex; align-items:center; gap:8px;">
             <span style="font-family:'DM Mono',monospace; font-size:10px; color:var(--text-faint);">${sezeni.length}×</span>
@@ -1841,7 +1929,29 @@ function renderArchiv() {
           </button>
         </div>
       </div>
-      <!-- Seznam sezení -->`;
+      <!-- Slovník osob -->`;
+
+    const verejnyDictKarty = nactiVerejnyDict(kod);
+    const privatniDictKarty = nactiPrivatniDict(kod);
+    const kodySlovniku = Object.keys(verejnyDictKarty).filter(k => k.startsWith('P'));
+    if (kodySlovniku.length > 0) {
+      html += `<div style="padding:10px 16px; border-bottom:1px solid var(--border); background:var(--bg);">
+        <div style="font-family:'DM Mono',monospace; font-size:9px; color:var(--text-faint); letter-spacing:0.15em; text-transform:uppercase; margin-bottom:8px;">Osoby</div>`;
+      kodySlovniku.sort().forEach(k => {
+        const popis = verejnyDictKarty[k];
+        const z = privZaznam(privatniDictKarty, k);
+        const jmena = z.jmena.join(', ');
+        const pohlaviLabel = z.pohlavi ? ` · ${z.pohlavi}` : '';
+        html += `<div style="display:flex; align-items:baseline; gap:8px; padding:3px 0;">
+          <span style="font-family:'DM Mono',monospace; font-size:11px; color:var(--accent); min-width:28px;">${k}</span>
+          <span style="font-size:14px; color:var(--text-dim); font-style:italic; flex:1;">${popis}${pohlaviLabel}</span>
+          ${jmena ? `<span style="font-family:'DM Mono',monospace; font-size:9px; color:var(--text-faint);">${jmena}</span>` : ''}
+        </div>`;
+      });
+      html += `</div>`;
+    }
+
+    html += `<!-- Seznam sezení -->`;
 
     sezeni.forEach(z => {
       const datum = new Date(z.datum).toLocaleDateString('cs-CZ', {day:'numeric', month:'short', year:'numeric'});
@@ -1883,7 +1993,7 @@ function zobrazZaznam(id) {
   document.getElementById('modal-btn-pseudo').style.color = 'var(--accent)';
   document.getElementById('modal-btn-desifrovan').style.borderColor = '';
   document.getElementById('modal-btn-desifrovan').style.color = '';
-  document.getElementById('modal-content').textContent = z.zapis;
+  document.getElementById('modal-content').textContent = stripMarkdown(z.zapis);
   document.getElementById('modal-content').style.display = 'block';
   document.getElementById('modal-edit-area').style.display = 'none';
   document.getElementById('modal-overlay').classList.add('open');
@@ -1899,7 +2009,7 @@ function prepniModalRezim(rezim) {
     pseudoBtn.style.color = 'var(--accent)';
     desiBtn.style.borderColor = '';
     desiBtn.style.color = '';
-    document.getElementById('modal-content').textContent = aktualniModalZaznam.zapis;
+    document.getElementById('modal-content').textContent = stripMarkdown(aktualniModalZaznam.zapis);
   } else {
     desiBtn.style.borderColor = 'var(--accent)';
     desiBtn.style.color = 'var(--accent)';
@@ -1918,11 +2028,13 @@ function prepniModalRezim(rezim) {
 
     // Nahraď kódy — osoby z privátního slovníku, místa/instituce z veřejného
     let text = aktualniModalZaznam.zapis;
-    // Seskup všechny kódy: osoby z privDict, místa/instituce z veřejného slovníku
     const vsechnyKody = {};
-    // Osoby — prvním jménem z privátního slovníku
-    Object.entries(privDict).forEach(([k, jmena]) => {
-      vsechnyKody[k] = jmena && jmena.length > 0 ? jmena[0] : k;
+    // Osoby — jméno + pohlaví v závorce
+    Object.keys(privDict).forEach(k => {
+      const z = privZaznam(privDict, k);
+      const jmeno = z.jmena.length > 0 ? z.jmena[0] : k;
+      const zaj = pohlaviZajmeno(z.pohlavi);
+      vsechnyKody[k] = zaj ? `${jmeno} (${zaj})` : jmeno;
     });
     // Místa (M*) a instituce (Z*) — popisem z veřejného slovníku
     Object.entries(verejnyDict).forEach(([k, popis]) => {
@@ -1930,7 +2042,7 @@ function prepniModalRezim(rezim) {
         vsechnyKody[k] = popis;
       }
     });
-    // Seřaď od nejdelšího kódu (P10 před P1)
+    // Seřaď od nejdelšího kódu (KLIENT, P10 před P1)
     const kody = Object.keys(vsechnyKody).sort((a,b) => b.length - a.length);
     kody.forEach(k => {
       const nahrada = vsechnyKody[k];
@@ -1938,7 +2050,7 @@ function prepniModalRezim(rezim) {
       text = text.replace(regex, nahrada);
     });
 
-    document.getElementById('modal-content').textContent = text;
+    document.getElementById('modal-content').textContent = stripMarkdown(text);
   }
 }
 
@@ -1976,7 +2088,7 @@ function ulozEditaci() {
   localStorage.setItem('zaznamy', JSON.stringify(zaznamy));
   aktualniModalZaznam.zapis = novyText;
 
-  document.getElementById('modal-content').textContent = novyText;
+  document.getElementById('modal-content').textContent = stripMarkdown(novyText);
   document.getElementById('modal-content').style.display = 'block';
   document.getElementById('modal-edit-area').style.display = 'none';
   renderArchiv();
