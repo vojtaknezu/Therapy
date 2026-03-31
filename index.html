@@ -695,8 +695,7 @@
     <div style="display:flex; gap:8px; margin-bottom:14px;">
       <button id="modal-btn-pseudo" class="btn btn-ghost" style="flex:1; padding:8px; font-size:10px;" onclick="prepniModalRezim('pseudo')">Pseudonymizovaný</button>
       <button id="modal-btn-desifrovan" class="btn btn-ghost" style="flex:1; padding:8px; font-size:10px;" onclick="prepniModalRezim('desifrovan')">
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
-        S pravými jmény
+        Originál
       </button>
     </div>
     <div class="modal-content" id="modal-content"></div>
@@ -1871,12 +1870,12 @@ function zobrazZaznam(id) {
 
   aktualniModalZaznam = z;
   document.getElementById('modal-title').textContent = `${z.kod} — sezení ${z.sezeni} — ${z.datum}`;
-  // Výchozí zobrazení: pseudonymizovaný
-  document.getElementById('modal-btn-pseudo').style.borderColor = 'var(--accent)';
-  document.getElementById('modal-btn-pseudo').style.color = 'var(--accent)';
-  document.getElementById('modal-btn-desifrovan').style.borderColor = '';
-  document.getElementById('modal-btn-desifrovan').style.color = '';
-  document.getElementById('modal-content').textContent = stripMarkdown(z.zapis);
+  // Výchozí zobrazení: originál
+  document.getElementById('modal-btn-desifrovan').style.borderColor = 'var(--accent)';
+  document.getElementById('modal-btn-desifrovan').style.color = 'var(--accent)';
+  document.getElementById('modal-btn-pseudo').style.borderColor = '';
+  document.getElementById('modal-btn-pseudo').style.color = '';
+  document.getElementById('modal-content').textContent = z.transcript || stripMarkdown(z.zapis);
   document.getElementById('modal-content').style.display = 'block';
   document.getElementById('modal-edit-area').style.display = 'none';
   document.getElementById('modal-overlay').classList.add('open');
@@ -1899,43 +1898,13 @@ function prepniModalRezim(rezim) {
     pseudoBtn.style.borderColor = '';
     pseudoBtn.style.color = '';
 
-    const kod = aktualniModalZaznam.kod;
-    const privDict = nactiPrivatniDict(kod);
-    const verejnyDict = nactiVerejnyDict(kod);
-
-    if (Object.keys(privDict).length === 0) {
+    // Zobraz originální přepis — správná jména, správné skloňování, žádné API
+    if (aktualniModalZaznam.transcript) {
+      document.getElementById('modal-content').textContent = aktualniModalZaznam.transcript;
+    } else {
       document.getElementById('modal-content').textContent =
-        aktualniModalZaznam.zapis + '\n\n[Žádný privátní slovník — jména nebyla uložena lokálně]';
-      return;
+        aktualniModalZaznam.zapis + '\n\n[Originál není k dispozici — záznam byl vytvořen bez uložení přepisu]';
     }
-
-    // Nahraď kódy — osoby z privátního slovníku, místa/instituce z veřejného
-    let text = aktualniModalZaznam.zapis;
-    const vsechnyKody = {};
-    // Osoby — jméno + pohlaví v závorce
-    Object.keys(privDict).forEach(k => {
-      const z = privZaznam(privDict, k);
-      const jmeno = z.jmena.length > 0 ? z.jmena[0] : k;
-      vsechnyKody[k] = jmeno;
-    });
-    // Místa (M*) a instituce (Z*) — popisem z veřejného slovníku
-    Object.entries(verejnyDict).forEach(([k, popis]) => {
-      if ((k.startsWith('M') || k.startsWith('Z')) && !vsechnyKody[k]) {
-        vsechnyKody[k] = popis;
-      }
-    });
-    // Seřaď od nejdelšího kódu (KLIENT, P10 před P1)
-    const kody = Object.keys(vsechnyKody).sort((a,b) => b.length - a.length);
-    kody.forEach(k => {
-      const nahrada = vsechnyKody[k];
-      // Matchuj kód i s českými příponami (P2ovi, P2ho, P2mu...) — nahraď celý výraz jménem
-      // Použij: kód nesmí být předcházen písmenem/číslicí, za ním může být cokoli nebo konec
-      const escapedK = k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const regex = new RegExp('(?<![A-Za-z0-9])' + escapedK + '[a-záčďéěíňóřšťůúýž]*', 'gi');
-      text = text.replace(regex, nahrada);
-    });
-
-    document.getElementById('modal-content').textContent = stripMarkdown(text);
   }
 }
 
