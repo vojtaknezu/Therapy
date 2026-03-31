@@ -995,12 +995,8 @@ async function pseudonymizujZapis() {
   document.getElementById('actions-section').style.display = 'none';
 
   const privatniHint = Object.keys(privatniDict).length > 0
-    ? '
-
-Známé varianty jmen:
-' +
-      Object.entries(privatniDict).map(([k]) => { const z = privZaznam(privatniDict, k); return `${k}: ${z.jmena.join(', ')}`; }).join('
-')
+    ? '\n\nZnámé varianty jmen:\n' +
+      Object.entries(privatniDict).map(([k]) => { const z = privZaznam(privatniDict, k); return k + ': ' + z.jmena.join(', '); }).join('\n')
     : '';
 
   const detekcePrompt = `Analyzuj text a identifikuj všechny osoby, místa a instituce.
@@ -1230,9 +1226,15 @@ function aplikujPseudonymizaci(detekce, kod, seseni, verejnyDict, privatniDict) 
   // Lokální nahrazení v textu — od nejdelšího výrazu
   let text = currentTranscript;
 
-  // Nejdřív klient
-  const escapedKod = kod.replace(/[.*+?^${}()|[\]\]/g, '\$&');
-  text = text.replace(new RegExp('(?<![A-Za-záčďéěíňóřšťůúýž])' + escapedKod + '[a-záčďéěíňóřšťůúýž]*', 'gi'), 'KLIENT');
+  // Nejdřív klient — nahraď všechny tvary jména
+  function escReg(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+  function nahradJmeno(txt, jmeno, nahrada) {
+    // Matchuj jméno + libovolná česká přípona, nesmí být předcházeno písmenem
+    const r = new RegExp('(^|[^a-zA-Z\u00C0-\u017E])' + escReg(jmeno) + '[a-z\u00E0-\u017E]*', 'gi');
+    return txt.replace(r, (m, pre) => pre + nahrada);
+  }
+
+  text = nahradJmeno(text, kod, 'KLIENT');
 
   // Pak ostatní — seřaď od nejdelšího jména
   const nahradyList = [];
@@ -1246,8 +1248,7 @@ function aplikujPseudonymizaci(detekce, kod, seseni, verejnyDict, privatniDict) 
 
   nahradyList.sort((a, b) => b.jmeno.length - a.jmeno.length);
   nahradyList.forEach(({ jmeno, kod: nahradaKod }) => {
-    const esc = jmeno.replace(/[.*+?^${}()|[\]\]/g, '\$&');
-    text = text.replace(new RegExp('(?<![A-Za-záčďéěíňóřšťůúýž])' + esc + '[a-záčďéěíňóřšťůúýž]*', 'gi'), nahradaKod);
+    text = nahradJmeno(text, jmeno, nahradaKod);
   });
 
   currentZapis = text;
