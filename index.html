@@ -796,21 +796,18 @@ function startRecording() {
 
   recognition.onresult = (event) => {
     let interim = '';
-    let final = finalText;
+    // Iterujeme jen nové výsledky této session — zabraňuje duplikátům při restartu
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const transcript = event.results[i][0].transcript;
       if (event.results[i].isFinal) {
-        final += transcript + ' ';
+        finalText += transcript + ' ';
       } else {
         interim += transcript;
       }
     }
-    finalText = final;
-    const display = finalText + (interim ? interim : '');
+    const display = finalText + interim;
     document.getElementById('transcription-text').value = display;
     currentTranscript = display;
-
-    // Animuj waveform bary jednoduše
     animujWaveformSimple();
   };
 
@@ -825,7 +822,7 @@ function startRecording() {
   };
 
   recognition.onend = () => {
-    // Pokud ještě nahráváme (přerušilo se samo), restartuj
+    // Při restartu po tichu — finalText zůstane, nová session přidává od nuly
     if (isRecording) {
       recognition.start();
     }
