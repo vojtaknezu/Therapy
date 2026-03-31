@@ -535,10 +535,16 @@
       <span id="status-text">Připraven</span>
     </div>
 
-    <!-- Přepis (zobrazí se po nahrání) -->
+    <!-- Přepis (zobrazí se po nahrání nebo ručním zadání) -->
     <div class="section" id="transcription-section" style="display:none;">
-      <div class="section-label">Přepis (Whisper)</div>
-      <div class="transcription-box" id="transcription-text"></div>
+      <div class="section-label">Přepis — můžeš upravit</div>
+      <textarea id="transcription-text" style="min-height:120px; font-size:15px; color:var(--text-dim); font-style:italic; line-height:1.6; background:var(--surface2); border-color:var(--border);" oninput="currentTranscript=this.value"></textarea>
+    </div>
+
+    <!-- Ruční zadání přepisu (vždy viditelné jako fallback) -->
+    <div class="section" id="manual-section">
+      <div class="section-label">Nebo zadej poznámky ručně</div>
+      <textarea id="manual-text" placeholder="Pokud nechceš nahrávat, napiš nebo vlož svůj přepis zde..." style="min-height:80px; font-size:15px;" oninput="aktivujManualniPrepis()"></textarea>
     </div>
 
     <!-- Akce po nahrání -->
@@ -618,11 +624,6 @@
     <div class="section">
       <div class="section-label">API klíče</div>
       <div class="settings-item">
-        <div class="settings-label">OpenAI API Key (Whisper)</div>
-        <input type="password" id="openai-key" placeholder="sk-...">
-        <div class="settings-note">Pro přepis hlasu do textu (~0.15 Kč / min)</div>
-      </div>
-      <div class="settings-item">
         <div class="settings-label">Anthropic API Key (Claude)</div>
         <input type="password" id="anthropic-key" placeholder="sk-ant-...">
         <div class="settings-note">Pro strukturování a intervizi (~2 Kč / zápis)</div>
@@ -630,7 +631,7 @@
       <div class="mt16">
         <button class="btn btn-primary" onclick="ulozNastaveni()">Uložit klíče</button>
       </div>
-      <div class="settings-note mt8">Klíče jsou uloženy pouze v tomto prohlížeči (localStorage). Nikam se neodesílají.</div>
+      <div class="settings-note mt8">Klíče jsou uloženy pouze v tomto prohlížeči (localStorage). Nikam se neodesílají. Přepis hlasu je zdarma přes Google Speech (Web Speech API).</div>
     </div>
 
     <div class="section">
@@ -685,14 +686,12 @@
 // ============================================================
 // STATE
 // ============================================================
-let mediaRecorder = null;
-let audioChunks = [];
+let recognition = null;
 let isRecording = false;
 let timerInterval = null;
 let timerSeconds = 0;
-let waveInterval = null;
-let analyser = null;
-let audioContext = null;
+let interimText = '';
+let finalText = '';
 
 let currentTranscript = '';
 let currentZapis = '';
@@ -749,39 +748,41 @@ function animujWaveform(data) {
 }
 
 // ============================================================
-// RECORDING
+// RECORDING — Web Speech API (Google Speech, česky)
 // ============================================================
-async function toggleRecording() {
+function toggleRecording() {
   if (!isRecording) {
-    await startRecording();
+    startRecording();
   } else {
     stopRecording();
   }
 }
 
-async function startRecording() {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+function startRecording() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    setStatus('error', 'Tvůj prohlížeč nepodporuje rozpoznávání řeči. Použij Chrome.');
+    return;
+  }
 
-    audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    const source = audioContext.createMediaStreamSource(stream);
-    analyser = audioContext.createAnalyser();
-    analyser.fftSize = 256;
-    source.connect(analyser);
+  recognition = new SpeechRecognition();
+  recognition.lang = 'cs-CZ';
+  recognition.continuous = true;
+  recognition.interimResults = true;
 
-    mediaRecorder = new MediaRecorder(stream, { mimeType: getSupportedMimeType() });
-    audioChunks = [];
+  finalText = '';
+  interimText = '';
 
-    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
-    mediaRecorder.onstop = handleRecordingStop;
-    mediaRecorder.start(100);
-
+  recognition.onstart = () => {
     isRecording = true;
     timerSeconds = 0;
-
     document.getElementById('record-btn').classList.add('recording');
     document.getElementById('record-label').textContent = 'Nahrávám — klepni pro zastavení';
     document.getElementById('record-label').classList.add('active');
+    document.getElementById('transcription-section').style.display = 'block';
+    document.getElementById('manual-section').style.display = 'none';
+    document.getElementById('transcription-text').value = '';
+    document.getElementById('transcription-text').placeholder = 'Poslouchám...';
 
     timerInterval = setInterval(() => {
       timerSeconds++;
@@ -790,80 +791,81 @@ async function startRecording() {
       document.getElementById('timer').textContent = `${m}:${s.toString().padStart(2,'0')}`;
     }, 1000);
 
-    waveInterval = setInterval(() => {
-      const data = new Uint8Array(analyser.frequencyBinCount);
-      analyser.getByteFrequencyData(data);
-      animujWaveform(data);
-    }, 80);
-
     setStatus('thinking', 'Nahrávám...');
+  };
 
-  } catch (err) {
-    setStatus('error', 'Chyba mikrofonu: ' + err.message);
-  }
-}
+  recognition.onresult = (event) => {
+    let interim = '';
+    let final = finalText;
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const transcript = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        final += transcript + ' ';
+      } else {
+        interim += transcript;
+      }
+    }
+    finalText = final;
+    const display = finalText + (interim ? interim : '');
+    document.getElementById('transcription-text').value = display;
+    currentTranscript = display;
 
-function getSupportedMimeType() {
-  const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
-  for (const t of types) {
-    if (MediaRecorder.isTypeSupported(t)) return t;
-  }
-  return '';
+    // Animuj waveform bary jednoduše
+    animujWaveformSimple();
+  };
+
+  recognition.onerror = (event) => {
+    if (event.error === 'not-allowed') {
+      setStatus('error', 'Přístup k mikrofonu zamítnut — povol ho v prohlížeči');
+    } else if (event.error === 'no-speech') {
+      // Ignoruj — continuous mode
+    } else {
+      setStatus('error', 'Chyba rozpoznávání: ' + event.error);
+    }
+  };
+
+  recognition.onend = () => {
+    // Pokud ještě nahráváme (přerušilo se samo), restartuj
+    if (isRecording) {
+      recognition.start();
+    }
+  };
+
+  recognition.start();
 }
 
 function stopRecording() {
-  if (mediaRecorder && isRecording) {
-    mediaRecorder.stop();
-    mediaRecorder.stream.getTracks().forEach(t => t.stop());
-    isRecording = false;
-    clearInterval(timerInterval);
-    clearInterval(waveInterval);
-    animujWaveform(null);
+  isRecording = false;
+  clearInterval(timerInterval);
+  animujWaveform(null);
 
-    document.getElementById('record-btn').classList.remove('recording');
-    document.getElementById('record-label').textContent = 'Zpracovávám...';
-    document.getElementById('record-label').classList.remove('active');
+  if (recognition) {
+    recognition.onend = null; // zabráníme auto-restartu
+    recognition.stop();
+    recognition = null;
+  }
+
+  document.getElementById('record-btn').classList.remove('recording');
+  document.getElementById('record-label').textContent = 'Přepis hotový — zkontroluj';
+  document.getElementById('record-label').classList.remove('active');
+
+  currentTranscript = document.getElementById('transcription-text').value.trim();
+
+  if (currentTranscript) {
+    document.getElementById('actions-section').style.display = 'block';
+    setStatus('done', 'Přepis dokončen — zkontroluj a strukturuj');
+  } else {
+    setStatus('', 'Připraven');
   }
 }
 
-async function handleRecordingStop() {
-  setStatus('thinking', 'Přepisuji s Whisper...');
-
-  const openaiKey = localStorage.getItem('openai_key');
-  if (!openaiKey) {
-    setStatus('error', 'Chybí OpenAI API klíč — nastav v Nastavení');
-    return;
-  }
-
-  const mimeType = getSupportedMimeType() || 'audio/webm';
-  const blob = new Blob(audioChunks, { type: mimeType });
-  const ext = mimeType.includes('mp4') ? 'mp4' : mimeType.includes('ogg') ? 'ogg' : 'webm';
-
-  const formData = new FormData();
-  formData.append('file', blob, `recording.${ext}`);
-  formData.append('model', 'whisper-1');
-  formData.append('language', 'cs');
-
-  try {
-    const resp = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${openaiKey}` },
-      body: formData
-    });
-
-    if (!resp.ok) throw new Error(await resp.text());
-    const data = await resp.json();
-    currentTranscript = data.text;
-
-    document.getElementById('transcription-text').textContent = currentTranscript;
-    document.getElementById('transcription-section').style.display = 'block';
-    document.getElementById('actions-section').style.display = 'block';
-    document.getElementById('record-label').textContent = 'Přepis hotový';
-
-    setStatus('done', 'Přepis dokončen — zkontroluj a strukturuj');
-  } catch (err) {
-    setStatus('error', 'Chyba Whisper: ' + err.message);
-  }
+function animujWaveformSimple() {
+  const bars = document.querySelectorAll('.wave-bar');
+  bars.forEach(bar => {
+    const h = Math.random() * 36 + 4;
+    bar.style.height = h + 'px';
+    bar.classList.add('active');
+  });
 }
 
 // ============================================================
@@ -989,7 +991,7 @@ Hodnoty jistota: "jistá" | "nejistá" | "nová"`;
         'anthropic-dangerous-direct-browser-access': 'true'
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-4-6',
         max_tokens: 1500,
         system: faze1Prompt,
         messages: [{ role: 'user', content: `Klient: ${kod}\n\nTEXT:\n${currentTranscript}` }]
@@ -1259,7 +1261,7 @@ Facing: [kontakt s realitou, druhým]
         'anthropic-dangerous-direct-browser-access': 'true'
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-4-6',
         max_tokens: 3000,
         system: faze2Prompt,
         messages: [{ role: 'user', content: currentTranscript }]
@@ -1335,9 +1337,21 @@ function ulozZapis() {
   currentZapis = '';
 }
 
+function aktivujManualniPrepis() {
+  const text = document.getElementById('manual-text').value.trim();
+  currentTranscript = text;
+  if (text.length > 0) {
+    document.getElementById('actions-section').style.display = 'block';
+  } else {
+    document.getElementById('actions-section').style.display = 'none';
+  }
+}
+
 function resetZapis() {
   currentTranscript = '';
   document.getElementById('transcription-section').style.display = 'none';
+  document.getElementById('manual-section').style.display = 'block';
+  document.getElementById('manual-text').value = '';
   document.getElementById('actions-section').style.display = 'none';
   document.getElementById('result-section').style.display = 'none';
   document.getElementById('timer').textContent = '0:00';
@@ -1430,7 +1444,7 @@ Celkem ${kontext.zaznamy.length} sezení. Nejnovější je sezení ${kontext.zaz
         'anthropic-dangerous-direct-browser-access': 'true'
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-4-6',
         max_tokens: 600,
         system: systemPrompt,
         messages: intervizeHistory
@@ -1470,7 +1484,7 @@ async function odpovedIntervize() {
         'anthropic-dangerous-direct-browser-access': 'true'
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-4-6',
         max_tokens: 400,
         system: systemPrompt,
         messages: intervizeHistory
@@ -1601,16 +1615,12 @@ function closeModal(e) {
 // NASTAVENÍ
 // ============================================================
 function nactiNastaveni() {
-  const ok = localStorage.getItem('openai_key');
   const ak = localStorage.getItem('anthropic_key');
-  if (ok) document.getElementById('openai-key').value = ok;
   if (ak) document.getElementById('anthropic-key').value = ak;
 }
 
 function ulozNastaveni() {
-  const ok = document.getElementById('openai-key').value.trim();
   const ak = document.getElementById('anthropic-key').value.trim();
-  if (ok) localStorage.setItem('openai_key', ok);
   if (ak) localStorage.setItem('anthropic_key', ak);
   setStatus('done', 'Klíče uloženy');
 }
