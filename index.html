@@ -1275,6 +1275,26 @@ function aplikujPseudonymizaci(detekce, kod, seseni, verejnyDict, privatniDict) 
 // ============================================================
 // ULOŽENÍ
 // ============================================================
+function renderDictPreview(verejnyDict, privatniDict) {
+  const el = document.getElementById('dict-preview');
+  const priv = privatniDict || nactiPrivatniDict(currentKlientKod);
+  if (Object.keys(verejnyDict).length === 0) {
+    el.innerHTML = '<span style="color:var(--text-faint);font-style:italic;font-size:14px;">Zadne nove osoby.</span>';
+    return;
+  }
+  el.innerHTML = Object.entries(verejnyDict).map(([k,v]) => {
+    const z = privZaznam(priv, k);
+    const varianty = z.jmena.join(', ');
+    const pohlaviLabel = z.pohlavi ? ' · ' + z.pohlavi : '';
+    return '<div class="dict-entry">'
+      + '<span class="dict-code">' + k + '</span>'
+      + '<div style="flex:1;">'
+      + '<div class="dict-name">' + v + pohlaviLabel + '</div>'
+      + (varianty ? '<div style="font-family:monospace;font-size:10px;color:var(--text-faint);margin-top:2px;">' + varianty + '</div>' : '')
+      + '</div></div>';
+  }).join('');
+}
+
 function ulozZapis() {
   if (!currentZapis || !currentKlientKod) return;
 
