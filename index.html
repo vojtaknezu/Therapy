@@ -1935,20 +1935,25 @@ function renderArchiv() {
     const privatniDictKarty = nactiPrivatniDict(kod);
     const kodySlovniku = Object.keys(verejnyDictKarty).filter(k => k.startsWith('P'));
     if (kodySlovniku.length > 0) {
-      html += `<div style="padding:10px 16px; border-bottom:1px solid var(--border); background:var(--bg);">
-        <div style="font-family:'DM Mono',monospace; font-size:9px; color:var(--text-faint); letter-spacing:0.15em; text-transform:uppercase; margin-bottom:8px;">Osoby</div>`;
+      let slovnikRows = '';
       kodySlovniku.sort().forEach(k => {
         const popis = verejnyDictKarty[k];
         const z = privZaznam(privatniDictKarty, k);
         const jmena = z.jmena.join(', ');
         const pohlaviLabel = z.pohlavi ? ` · ${z.pohlavi}` : '';
-        html += `<div style="display:flex; align-items:baseline; gap:8px; padding:3px 0;">
+        slovnikRows += `<div style="display:flex; align-items:baseline; gap:8px; padding:4px 0; border-bottom:1px solid var(--border);">
           <span style="font-family:'DM Mono',monospace; font-size:11px; color:var(--accent); min-width:28px;">${k}</span>
           <span style="font-size:14px; color:var(--text-dim); font-style:italic; flex:1;">${popis}${pohlaviLabel}</span>
           ${jmena ? `<span style="font-family:'DM Mono',monospace; font-size:9px; color:var(--text-faint);">${jmena}</span>` : ''}
         </div>`;
       });
-      html += `</div>`;
+      html += `<details style="border-bottom:1px solid var(--border);">
+        <summary style="padding:10px 16px; cursor:pointer; font-family:'DM Mono',monospace; font-size:9px; color:var(--text-faint); letter-spacing:0.15em; text-transform:uppercase; list-style:none; display:flex; justify-content:space-between; align-items:center;">
+          Osoby (${kodySlovniku.length})
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+        </summary>
+        <div style="padding:0 16px 10px;">${slovnikRows}</div>
+      </details>`;
     }
 
     html += `<!-- Seznam sezení -->`;
@@ -2033,8 +2038,7 @@ function prepniModalRezim(rezim) {
     Object.keys(privDict).forEach(k => {
       const z = privZaznam(privDict, k);
       const jmeno = z.jmena.length > 0 ? z.jmena[0] : k;
-      const zaj = pohlaviZajmeno(z.pohlavi);
-      vsechnyKody[k] = zaj ? `${jmeno} (${zaj})` : jmeno;
+      vsechnyKody[k] = jmeno;
     });
     // Místa (M*) a instituce (Z*) — popisem z veřejného slovníku
     Object.entries(verejnyDict).forEach(([k, popis]) => {
@@ -2046,7 +2050,10 @@ function prepniModalRezim(rezim) {
     const kody = Object.keys(vsechnyKody).sort((a,b) => b.length - a.length);
     kody.forEach(k => {
       const nahrada = vsechnyKody[k];
-      const regex = new RegExp('\\b' + k + '\\b', 'g');
+      // Matchuj kód i s českými příponami (P2ovi, P2ho, P2mu...) — nahraď celý výraz jménem
+      // Použij: kód nesmí být předcházen písmenem/číslicí, za ním může být cokoli nebo konec
+      const escapedK = k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp('(?<![A-Za-z0-9])' + escapedK + '[a-záčďéěíňóřšťůúýž]*', 'gi');
       text = text.replace(regex, nahrada);
     });
 
