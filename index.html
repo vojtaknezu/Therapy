@@ -554,36 +554,27 @@
 
     <!-- Akce po nahrání -->
     <div class="section gap8" id="actions-section" style="display:none;">
-      <button class="btn btn-primary" onclick="strukturujZapis()">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-        Strukturovat & pseudonymizovat
+      <button class="btn btn-primary" onclick="pseudonymizujZapis()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+        Pseudonymizovat & uložit
       </button>
       <button class="btn btn-ghost" onclick="resetZapis()">Nahrát znovu</button>
     </div>
 
-    <!-- Rychlé uložení bez strukturování -->
-    <div class="section gap8" id="quick-save-section" style="display:none;">
-      <div class="section-label">Nebo ulož přepis přímo</div>
-      <button class="btn btn-ghost" onclick="ulozBezStrukturovani()">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-        Uložit jako surový zápis
-      </button>
-    </div>
-
-    <!-- Výsledek -->
+    <!-- Výsledek — náhled před uložením -->
     <div id="result-section" style="display:none;">
       <div class="section">
-        <div class="section-label">Pseudonymizační slovník (lokální)</div>
+        <div class="section-label">Nové osoby ve slovníku</div>
         <div id="dict-preview"></div>
       </div>
       <div class="section">
-        <div class="section-label">Strukturovaný zápis</div>
+        <div class="section-label">Pseudonymizovaný zápis</div>
         <div id="result-preview" class="result-content"></div>
       </div>
       <div class="section gap8">
         <button class="btn btn-success" onclick="ulozZapis()">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-          Uložit zápis
+          Uložit
         </button>
         <button class="btn btn-ghost" onclick="spustInterviziZZapisu()">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
@@ -977,20 +968,19 @@ function sestavDictKontextProClaude(verejnyDict) {
 }
 
 // ============================================================
-// STRUKTUROVÁNÍ + PSEUDONYMIZACE — FÁZE 1: detekce osob
+// PSEUDONYMIZACE
 // ============================================================
-async function strukturujZapis() {
+async function pseudonymizujZapis() {
   const kod = document.getElementById('klient-kod').value.trim();
   const seseni = parseInt(document.getElementById('sezeni-cislo').value) || 1;
 
-  // Synchronizuj currentTranscript z textarea (pro případ že byl text editován ručně)
   const taVal = document.getElementById('transcription-text').value.trim();
   const manVal = document.getElementById('manual-text') ? document.getElementById('manual-text').value.trim() : '';
   if (taVal) currentTranscript = taVal;
   else if (manVal) currentTranscript = manVal;
 
-  if (!kod) { setStatus('error', 'Zadej kód klienta'); alert('Zadej kód klienta (např. K001)'); return; }
-  if (!currentTranscript) { setStatus('error', 'Přepis je prázdný'); alert('Nejprve nahraj nebo zadej text zápisku.'); return; }
+  if (!kod) { setStatus('error', 'Zadej jméno klienta'); alert('Zadej jméno klienta.'); return; }
+  if (!currentTranscript) { setStatus('error', 'Přepis je prázdný'); alert('Nejprve nahraj nebo zadej text.'); return; }
 
   const anthropicKey = localStorage.getItem('anthropic_key');
   if (!anthropicKey) { setStatus('error', 'Chybí Anthropic API klíč'); alert('V Nastavení chybí Anthropic API klíč.'); return; }
@@ -1001,66 +991,40 @@ async function strukturujZapis() {
   const verejnyDict = nactiVerejnyDict(kod);
   const privatniDict = nactiPrivatniDict(kod);
 
-  setStatus('thinking', 'Rozpoznávám osoby...');
+  setStatus('thinking', 'Rozpoznávám osoby a místa...');
   document.getElementById('actions-section').style.display = 'none';
 
-  const dnes = new Date().toISOString().split('T')[0];
-
-  // FÁZE 1: Nejprve detekuj osoby a zkontroluj nejistoty
-  // Privátní dict posíláme pro rozpoznání variant — jde do API, ale jen jako hint pro matching
   const privatniHint = Object.keys(privatniDict).length > 0
-    ? '\n\nZnámé varianty jmen (pro rozpoznání totožnosti):\n' +
-      Object.entries(privatniDict).map(([k,v]) => { const z = privZaznam(privatniDict, k); return `${k}: ${z.jmena.join(', ')}`; }).join('\n')
+    ? '
+
+Známé varianty jmen:
+' +
+      Object.entries(privatniDict).map(([k]) => { const z = privZaznam(privatniDict, k); return `${k}: ${z.jmena.join(', ')}`; }).join('
+')
     : '';
 
-  const faze1Prompt = `Jsi asistent biosyntézového terapeuta. Analyzuj text a identifikuj všechny osoby.
+  const detekcePrompt = `Analyzuj text a identifikuj všechny osoby, místa a instituce.
 
 EXISTUJÍCÍ SLOVNÍK${sestavDictKontextProClaude(verejnyDict)}${privatniHint}
 
-PRAVIDLA PRO ROZPOZNÁVÁNÍ VARIANT JMEN:
-- Lucie = Lucka = Lucii = Lucce = Luciiny → stejná osoba
-- Tomáš = Tomík = Tomáše = Tomášovi → stejná osoba  
-- Různé pádové tvary, zdrobněliny a přechýlení považuj za tutéž osobu
-- Pokud si nejsi JISTÝ že jde o stejnou osobu, označ jako NEJISTÉ
+PRAVIDLA:
+- Různé pádové tvary a zdrobněliny = tatáž osoba
+- Klient ${kod} = KLIENT, nezahrnuj ho do osob
+- Pokud si nejsi jistý zda jde o stejnou osobu jako v existujícím slovníku, označ jako nejistá
 
 Vrať JSON (nic jiného):
 {
   "osoby": [
-    {
-      "jmena_v_textu": ["Lucka", "Lucie"],
-      "existujici_kod": "P1",
-      "jistota": "jistá",
-      "role": "partnerka",
-      "pohlavi": "žena",
-      "vek": "~38"
-    },
-    {
-      "jmena_v_textu": ["Pavel"],
-      "existujici_kod": null,
-      "jistota": "nová",
-      "role": "otec klienta",
-      "pohlavi": "muž",
-      "vek": "~65"
-    },
-    {
-      "jmena_v_textu": ["Petra"],
-      "existujici_kod": "P3",
-      "jistota": "nejistá",
-      "duvod_nejistoty": "Petra není v seznamu variant P3, ale role odpovídá",
-      "role": "kolegyně",
-      "pohlavi": "žena",
-      "vek": "neznámý"
-    }
+    { "jmena_v_textu": ["Jana", "Janička"], "existujici_kod": null, "jistota": "nová", "role": "partnerka", "pohlavi": "žena", "vek": "~35" }
   ],
   "mista": [
-    { "nazev": "Brno", "kod": "M1", "popis": "město na Moravě", "jistota": "jistá" }
+    { "nazev": "Praha", "kod": null, "popis": "hlavní město", "jistota": "nová" }
   ],
   "instituce": [
-    { "nazev": "nemocnice", "kod": "Z1", "popis": "zdravotnické zařízení", "jistota": "jistá" }
+    { "nazev": "nemocnice", "kod": null, "popis": "zdravotnické zařízení", "jistota": "nová" }
   ]
 }
-
-Hodnoty jistota: "jistá" | "nejistá" | "nová"`;
+Jistota: "jistá" | "nejistá" | "nová"`;
 
   try {
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
@@ -1074,19 +1038,20 @@ Hodnoty jistota: "jistá" | "nejistá" | "nová"`;
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
         max_tokens: 1500,
-        system: faze1Prompt,
-        messages: [{ role: 'user', content: `Klient: ${kod}\n\nTEXT:\n${currentTranscript}` }]
+        system: detekcePrompt,
+        messages: [{ role: 'user', content: `Klient: ${kod}
+
+TEXT:
+${currentTranscript}` }]
       })
     });
 
     if (!resp.ok) throw new Error(await resp.text());
     const data = await resp.json();
-    let rawJson = data.content[0].text.trim();
-    // Odstraň případné ```json bloky
-    rawJson = rawJson.replace(/^```json\s*/,'').replace(/\s*```$/,'');
+    let rawJson = data.content[0].text.trim().replace(/^```json\s*/,'').replace(/\s*```$/,'');
     const detekce = JSON.parse(rawJson);
 
-    // Zjisti, jsou-li nejisté identity
+    // Zkontroluj nejisté identity
     const nejiste = [
       ...(detekce.osoby || []).filter(o => o.jistota === 'nejistá'),
       ...(detekce.mista || []).filter(m => m.jistota === 'nejistá'),
@@ -1094,16 +1059,14 @@ Hodnoty jistota: "jistá" | "nejistá" | "nová"`;
     ];
 
     if (nejiste.length > 0) {
-      // Zobraz potvrzovací dialog
-      zobrazIdentityDialog(nejiste, detekce, kod, seseni, dnes, verejnyDict, privatniDict, anthropicKey);
+      zobrazIdentityDialog(nejiste, detekce, kod, seseni, null, verejnyDict, privatniDict, null);
     } else {
-      // Vše jasné, jdi rovnou do fáze 2
-      await faze2Strukturuj(detekce, kod, seseni, dnes, verejnyDict, privatniDict, anthropicKey);
+      aplikujPseudonymizaci(detekce, kod, seseni, verejnyDict, privatniDict);
     }
 
   } catch (err) {
     setStatus('error', 'Chyba: ' + err.message);
-    alert('Chyba při strukturování: ' + err.message);
+    alert('Chyba pseudonymizace: ' + err.message);
     document.getElementById('actions-section').style.display = 'block';
   }
 }
@@ -1118,7 +1081,7 @@ let pendingParams = null;
 function zobrazIdentityDialog(nejiste, detekce, kod, seseni, dnes, verejnyDict, privatniDict, anthropicKey) {
   identityResolutions = {};
   pendingDetekce = detekce;
-  pendingParams = { kod, seseni, dnes, verejnyDict, privatniDict, anthropicKey };
+  pendingParams = { kod, seseni, verejnyDict, privatniDict };
 
   const questionsEl = document.getElementById('identity-questions');
   const actionsEl = document.getElementById('identity-actions');
@@ -1144,25 +1107,21 @@ function zobrazIdentityDialog(nejiste, detekce, kod, seseni, dnes, verejnyDict, 
     }
 
     html += `<div class="gap8" style="margin-top:10px;">`;
-
     if (existujiciPopis) {
       html += `<button class="btn btn-ghost" style="font-size:12px; text-align:left; justify-content:flex-start;"
-        onclick="resolveIdentity(${idx}, 'same', '${item.existujici_kod}', '${jmena.replace(/'/g,"\\'")}')">
+        onclick="resolveIdentity(${idx}, 'same', '${item.existujici_kod}', '${jmena.replace(/'/g,"\'")}')">
         ✓ Ano, je to ${existujiciPopis}
       </button>`;
     }
-
     html += `<button class="btn btn-ghost" style="font-size:12px; text-align:left; justify-content:flex-start;"
-      onclick="resolveIdentity(${idx}, 'new', null, '${jmena.replace(/'/g,"\\'")}')">
-      + Nová osoba (přiřadit nový kód)
+      onclick="resolveIdentity(${idx}, 'new', null, '${jmena.replace(/'/g,"\'")}')">
+      + Nová osoba
     </button>`;
-
     html += `</div></div>`;
   });
 
   questionsEl.innerHTML = html;
   actionsEl.innerHTML = `<button class="btn btn-ghost" onclick="zavriIdentityDialog()">Zrušit</button>`;
-
   document.getElementById('identity-modal').classList.add('open');
   setStatus('thinking', `Potvrď ${nejiste.length} nejist${nejiste.length === 1 ? 'ou identitu' : 'é identity'}...`);
 }
@@ -1170,7 +1129,6 @@ function zobrazIdentityDialog(nejiste, detekce, kod, seseni, dnes, verejnyDict, 
 function resolveIdentity(idx, typ, existujiciKod, jmena) {
   identityResolutions[idx] = { typ, existujiciKod, jmena };
 
-  // Zkontroluj, jestli jsou všechny nejisté položky vyřešeny
   const nejiste = [
     ...(pendingDetekce.osoby || []).filter(o => o.jistota === 'nejistá'),
     ...(pendingDetekce.mista || []).filter(m => m.jistota === 'nejistá'),
@@ -1178,22 +1136,10 @@ function resolveIdentity(idx, typ, existujiciKod, jmena) {
   ];
 
   if (Object.keys(identityResolutions).length >= nejiste.length) {
-    // Aplikuj rozhodnutí
     aplikujResolutions(nejiste);
     document.getElementById('identity-modal').classList.remove('open');
-    faze2Strukturuj(
-      pendingDetekce,
-      pendingParams.kod,
-      pendingParams.seseni,
-      pendingParams.dnes,
-      pendingParams.verejnyDict,
-      pendingParams.privatniDict,
-      pendingParams.anthropicKey
-    );
+    aplikujPseudonymizaci(pendingDetekce, pendingParams.kod, pendingParams.seseni, pendingParams.verejnyDict, pendingParams.privatniDict);
   } else {
-    // Vizuálně označ jako vyřešené
-    const btns = document.querySelectorAll(`#identity-questions .btn`);
-    // Jednoduché řešení: zašedni aktuální otázku
     setStatus('thinking', `Vyřešeno ${Object.keys(identityResolutions).length}/${nejiste.length}...`);
   }
 }
@@ -1202,23 +1148,15 @@ function aplikujResolutions(nejiste) {
   nejiste.forEach((item, idx) => {
     const res = identityResolutions[idx];
     if (!res) return;
-
     if (res.typ === 'same' && res.existujiciKod) {
-      // Přidej jména jako varianty do privátního slovníku
       const privDict = nactiPrivatniDict(pendingParams.kod);
       if (!privDict[res.existujiciKod]) privDict[res.existujiciKod] = { jmena: [], pohlavi: '' };
-      if (!privDict[res.existujiciKod].jmena) {
-        privDict[res.existujiciKod] = { jmena: privDict[res.existujiciKod], pohlavi: '' };
-      }
+      if (!privDict[res.existujiciKod].jmena) privDict[res.existujiciKod] = { jmena: privDict[res.existujiciKod], pohlavi: '' };
       const novaJmena = res.jmena.split(', ');
-      novaJmena.forEach(j => {
-        if (!privDict[res.existujiciKod].jmena.includes(j)) privDict[res.existujiciKod].jmena.push(j);
-      });
+      novaJmena.forEach(j => { if (!privDict[res.existujiciKod].jmena.includes(j)) privDict[res.existujiciKod].jmena.push(j); });
       ulozPrivatniDict(pendingParams.kod, privDict);
-      // Aktualizuj detekci
       if (item.existujici_kod) item.jistota = 'jistá';
     } else if (res.typ === 'new') {
-      // Označíme jako novou — fáze 2 přiřadí nový kód
       item.existujici_kod = null;
       item.jistota = 'nová';
     }
@@ -1232,12 +1170,11 @@ function zavriIdentityDialog() {
 }
 
 // ============================================================
-// FÁZE 2: Strukturování s potvrzenými identitami
+// PSEUDONYMIZACE — lokální nahrazení jmen kódy
 // ============================================================
-async function faze2Strukturuj(detekce, kod, seseni, dnes, verejnyDict, privatniDict, anthropicKey) {
-  setStatus('thinking', 'Strukturuji zápis...');
+function aplikujPseudonymizaci(detekce, kod, seseni, verejnyDict, privatniDict) {
+  setStatus('thinking', 'Pseudonymizuji...');
 
-  // Přiřaď kódy novým osobám
   const existujiciKody = Object.keys(verejnyDict);
   let novyKodIdx = {
     P: Math.max(0, ...existujiciKody.filter(k=>k[0]==='P').map(k=>parseInt(k.slice(1))||0)) + 1,
@@ -1248,26 +1185,18 @@ async function faze2Strukturuj(detekce, kod, seseni, dnes, verejnyDict, privatni
   const novyVerejnyDict = { ...verejnyDict };
   const novyPrivatniDict = { ...privatniDict };
 
-  // Přidej nové osoby do slovníku
+  // Přiřaď kódy novým osobám
   (detekce.osoby || []).forEach(o => {
     if (o.jistota === 'nová' || (!o.existujici_kod && o.jistota !== 'ignorovat')) {
       const novyKod = `P${novyKodIdx.P++}`;
       o.existujici_kod = novyKod;
-      novyVerejnyDict[novyKod] = `${o.role || 'osoba'}, ${o.pohlavi || '?'}, ${o.vek || '?'}`;
+      novyVerejnyDict[novyKod] = `${o.role || 'osoba'}, ${o.pohlavi || '?'}`;
       novyPrivatniDict[novyKod] = { jmena: o.jmena_v_textu || [], pohlavi: o.pohlavi || '' };
     } else if (o.existujici_kod && o.jmena_v_textu) {
-      // Přidej varianty jmen do privátního slovníku
       if (!novyPrivatniDict[o.existujici_kod]) novyPrivatniDict[o.existujici_kod] = { jmena: [], pohlavi: '' };
-      if (!novyPrivatniDict[o.existujici_kod].jmena) {
-        // Migrace starého formátu (pole → objekt)
-        novyPrivatniDict[o.existujici_kod] = { jmena: novyPrivatniDict[o.existujici_kod], pohlavi: '' };
-      }
-      o.jmena_v_textu.forEach(j => {
-        if (!novyPrivatniDict[o.existujici_kod].jmena.includes(j)) novyPrivatniDict[o.existujici_kod].jmena.push(j);
-      });
-      if (o.pohlavi && !novyPrivatniDict[o.existujici_kod].pohlavi) {
-        novyPrivatniDict[o.existujici_kod].pohlavi = o.pohlavi;
-      }
+      if (!novyPrivatniDict[o.existujici_kod].jmena) novyPrivatniDict[o.existujici_kod] = { jmena: novyPrivatniDict[o.existujici_kod], pohlavi: '' };
+      o.jmena_v_textu.forEach(j => { if (!novyPrivatniDict[o.existujici_kod].jmena.includes(j)) novyPrivatniDict[o.existujici_kod].jmena.push(j); });
+      if (o.pohlavi && !novyPrivatniDict[o.existujici_kod].pohlavi) novyPrivatniDict[o.existujici_kod].pohlavi = o.pohlavi;
     }
   });
 
@@ -1276,6 +1205,7 @@ async function faze2Strukturuj(detekce, kod, seseni, dnes, verejnyDict, privatni
       const novyKod = `M${novyKodIdx.M++}`;
       m.kod = novyKod;
       novyVerejnyDict[novyKod] = m.popis || m.nazev;
+      novyPrivatniDict[novyKod] = { jmena: [m.nazev], pohlavi: '' };
     }
   });
 
@@ -1284,10 +1214,11 @@ async function faze2Strukturuj(detekce, kod, seseni, dnes, verejnyDict, privatni
       const novyKod = `Z${novyKodIdx.Z++}`;
       i.kod = novyKod;
       novyVerejnyDict[novyKod] = i.popis || i.nazev;
+      novyPrivatniDict[novyKod] = { jmena: [i.nazev], pohlavi: '' };
     }
   });
 
-  // Uložit klienta do privátního slovníku pod kódem KLIENT
+  // Uložit klienta pod KLIENT
   if (!novyPrivatniDict['KLIENT']) {
     novyPrivatniDict['KLIENT'] = { jmena: [kod], pohlavi: '' };
   } else {
@@ -1296,122 +1227,48 @@ async function faze2Strukturuj(detekce, kod, seseni, dnes, verejnyDict, privatni
     novyPrivatniDict['KLIENT'] = kz;
   }
 
-  // Sestav substituční mapu: skutečné jméno → kód
-  let substituce = `${kod} = KLIENT (nahraď všechny výskyty jména klienta kódem KLIENT)\n`;
+  // Lokální nahrazení v textu — od nejdelšího výrazu
+  let text = currentTranscript;
+
+  // Nejdřív klient
+  const escapedKod = kod.replace(/[.*+?^${}()|[\]\]/g, '\$&');
+  text = text.replace(new RegExp('(?<![A-Za-záčďéěíňóřšťůúýž])' + escapedKod + '[a-záčďéěíňóřšťůúýž]*', 'gi'), 'KLIENT');
+
+  // Pak ostatní — seřaď od nejdelšího jména
+  const nahradyList = [];
   (detekce.osoby || []).forEach(o => {
     if (o.existujici_kod && o.jmena_v_textu) {
-      o.jmena_v_textu.forEach(j => { substituce += `${j} → ${o.existujici_kod}\n`; });
+      o.jmena_v_textu.forEach(j => nahradyList.push({ jmeno: j, kod: o.existujici_kod }));
     }
   });
-  (detekce.mista || []).forEach(m => {
-    if (m.kod) substituce += `${m.nazev} → ${m.kod}\n`;
+  (detekce.mista || []).forEach(m => { if (m.kod) nahradyList.push({ jmeno: m.nazev, kod: m.kod }); });
+  (detekce.instituce || []).forEach(i => { if (i.kod) nahradyList.push({ jmeno: i.nazev, kod: i.kod }); });
+
+  nahradyList.sort((a, b) => b.jmeno.length - a.jmeno.length);
+  nahradyList.forEach(({ jmeno, kod: nahradaKod }) => {
+    const esc = jmeno.replace(/[.*+?^${}()|[\]\]/g, '\$&');
+    text = text.replace(new RegExp('(?<![A-Za-záčďéěíňóřšťůúýž])' + esc + '[a-záčďéěíňóřšťůúýž]*', 'gi'), nahradaKod);
   });
-  (detekce.instituce || []).forEach(i => {
-    if (i.kod) substituce += `${i.nazev} → ${i.kod}\n`;
-  });
 
-  const faze2Prompt = `Jsi asistent biosyntézového terapeuta. Strukturuj mluvenou poznámku do biosyntézové šablony.
+  currentZapis = text;
+  currentDict = novyVerejnyDict;
 
-SUBSTITUCE (nahraď VŠECHNY výskyty, včetně skloňovaných tvarů):
-${substituce}
+  // Ulož slovníky
+  ulozVerejnyDict(kod, novyVerejnyDict);
+  ulozPrivatniDict(kod, novyPrivatniDict);
 
-DŮLEŽITÉ: Žádné markdown — žádné **, *, ##. Pouze prostý text.
+  // Zobraz jen nové položky slovníku
+  const noveKody = Object.keys(novyVerejnyDict).filter(k => !verejnyDict[k]);
+  const novyDictPreview = {};
+  noveKody.forEach(k => { novyDictPreview[k] = novyVerejnyDict[k]; });
 
-Vrať POUZE strukturovaný zápis (hlavičky VELKÝMI písmeny, bez ##):
-
----
-klient: KLIENT
-datum: ${dnes}
-sezeni: ${seseni}
----
-
-REAKTIVACE
-[spontánní první dojem terapeuta — zachovej jeho slova]
-
-NARATIV A TÉMA
-[co přinesl klient, jak se téma vyvíjelo, co zůstalo otevřené]
-
-TĚLESNÉ PROCESY
-[pozorování těla klienta, somatické vzorce, intervence]
-
-KVALITA KONTAKTU A POLE
-[živost kontaktu, přerušení, atmosféra]
-
-PŘENOS A PROTIPŘENOS
-[pocity terapeuta, dynamika přenosu]
-
-KLÍČOVÉ MOMENTY
-[překvapení, průlomy, co znepokojilo]
-
-BIOSYNTÉZOVÝ RÁM
-Grounding: [uzemnění, kontakt se zemí]
-Centering: [vnitřní střed, koherence]
-Facing: [kontakt s realitou, druhým]
-
-ZÁMĚR PRO PŘÍŠTÍ SEZENÍ
-[co otevřít, na co si dát pozor]
-
-POZNÁMKY PRO SUPERVIZI
-[otázky, slepá místa, co přinést supervizorovi]`;
-
-  try {
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': anthropicKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 3000,
-        system: faze2Prompt,
-        messages: [{ role: 'user', content: currentTranscript }]
-      })
-    });
-
-    if (!resp.ok) throw new Error(await resp.text());
-    const data = await resp.json();
-    currentZapis = data.content[0].text.trim();
-    currentDict = novyVerejnyDict;
-
-    // Ulož oba slovníky
-    ulozVerejnyDict(kod, novyVerejnyDict);
-    ulozPrivatniDict(kod, novyPrivatniDict);
-
-    currentZapis = stripMarkdown(currentZapis);
-    document.getElementById('result-preview').textContent = currentZapis;
-    renderDictPreview(novyVerejnyDict, novyPrivatniDict);
-    document.getElementById('result-section').style.display = 'block';
-    setStatus('done', 'Hotovo — zkontroluj a ulož');
-
-  } catch (err) {
-    setStatus('error', 'Chyba strukturování: ' + err.message);
-    document.getElementById('actions-section').style.display = 'block';
+  document.getElementById('result-preview').textContent = currentZapis;
+  renderDictPreview(novyDictPreview, novyPrivatniDict);
+  if (Object.keys(novyDictPreview).length === 0) {
+    document.getElementById('dict-preview').innerHTML = '<span style="color:var(--text-faint);font-style:italic;font-size:14px;">Žádné nové osoby.</span>';
   }
-}
-
-function renderDictPreview(verejnyDict, privatniDict) {
-  const el = document.getElementById('dict-preview');
-  const priv = privatniDict || nactiPrivatniDict(currentKlientKod);
-
-  if (Object.keys(verejnyDict).length === 0) {
-    el.innerHTML = '<span style="color:var(--text-faint);font-style:italic;font-size:14px;">Žádné osoby v zápisech.</span>';
-    return;
-  }
-  el.innerHTML = Object.entries(verejnyDict).map(([k,v]) => {
-    const z = privZaznam(priv, k);
-    const varianty = z.jmena.join(', ');
-    const pohlaviLabel = z.pohlavi ? ` · ${z.pohlavi}` : '';
-    return `<div class="dict-entry">
-      <span class="dict-code">${k}</span>
-      <div style="flex:1;">
-        <div class="dict-name">${v}${pohlaviLabel}</div>
-        ${varianty ? `<div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--text-faint);margin-top:2px;">${varianty}</div>` : ''}
-      </div>
-    </div>`;
-  }).join('');
+  document.getElementById('result-section').style.display = 'block';
+  setStatus('done', 'Hotovo — zkontroluj a ulož');
 }
 
 // ============================================================
