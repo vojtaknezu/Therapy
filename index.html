@@ -1744,9 +1744,7 @@ function prepniModalRezim(rezim) {
 
     if (Object.keys(privDict).length === 0) {
       document.getElementById('modal-content').textContent =
-        aktualniModalZaznam.zapis + '
-
-[Žádný privátní slovník — jména nebyla uložena lokálně]';
+        aktualniModalZaznam.zapis + '\n\n[Žádný privátní slovník — jména nebyla uložena lokálně]';
       return;
     }
 
