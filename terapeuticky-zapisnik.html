@@ -1,0 +1,1563 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Terapeutický zápisník</title>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,300;0,400;1,300;1,400&family=DM+Mono:wght@300;400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0f0e0c;
+    --surface: #1a1916;
+    --surface2: #232219;
+    --border: #2e2c26;
+    --accent: #c8a96e;
+    --accent-dim: #8a7248;
+    --text: #e8e4d8;
+    --text-dim: #8a8578;
+    --text-faint: #4a4840;
+    --danger: #c46a4a;
+    --success: #6a9e7a;
+    --rec: #c44a4a;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Crimson Pro', Georgia, serif;
+    font-size: 18px;
+    line-height: 1.6;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* GRAIN OVERLAY */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 1000;
+    opacity: 0.4;
+  }
+
+  .app {
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 0 0 80px 0;
+  }
+
+  /* HEADER */
+  header {
+    padding: 24px 20px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+
+  header h1 {
+    font-size: 15px;
+    font-weight: 300;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  header .sub {
+    font-size: 13px;
+    color: var(--text-faint);
+    font-family: 'DM Mono', monospace;
+  }
+
+  /* SCREENS */
+  .screen { display: none; animation: fadeIn 0.3s ease; }
+  .screen.active { display: block; }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* SECTIONS */
+  .section {
+    padding: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .section-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin-bottom: 12px;
+  }
+
+  /* INPUTS */
+  input, textarea, select {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: 'Crimson Pro', Georgia, serif;
+    font-size: 17px;
+    padding: 12px 14px;
+    border-radius: 4px;
+    width: 100%;
+    outline: none;
+    transition: border-color 0.2s;
+    -webkit-appearance: none;
+  }
+
+  input:focus, textarea:focus {
+    border-color: var(--accent-dim);
+  }
+
+  input::placeholder, textarea::placeholder {
+    color: var(--text-faint);
+    font-style: italic;
+  }
+
+  .input-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  textarea {
+    resize: none;
+    min-height: 100px;
+  }
+
+  /* BUTTONS */
+  .btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 14px 20px;
+    border: none;
+    border-radius: 4px;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.2s;
+    width: 100%;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: var(--bg);
+  }
+
+  .btn-primary:active { background: var(--accent-dim); }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+  }
+
+  .btn-ghost:active { background: var(--surface2); }
+
+  .btn-danger {
+    background: transparent;
+    color: var(--danger);
+    border: 1px solid var(--danger);
+  }
+
+  .btn-success {
+    background: var(--success);
+    color: var(--bg);
+  }
+
+  /* RECORD BUTTON */
+  .record-area {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 20px;
+    gap: 20px;
+  }
+
+  .record-btn {
+    width: 88px;
+    height: 88px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    background: var(--surface);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+  }
+
+  .record-btn.recording {
+    border-color: var(--rec);
+    animation: pulse 1.5s infinite;
+  }
+
+  .record-btn svg { transition: all 0.2s; }
+
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(196, 74, 74, 0.3); }
+    50% { box-shadow: 0 0 0 16px rgba(196, 74, 74, 0); }
+  }
+
+  .record-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+  }
+
+  .record-label.active { color: var(--rec); }
+
+  .timer {
+    font-family: 'DM Mono', monospace;
+    font-size: 28px;
+    font-weight: 300;
+    color: var(--text-dim);
+    letter-spacing: 0.05em;
+  }
+
+  /* WAVEFORM */
+  .waveform {
+    width: 100%;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 0 20px;
+  }
+
+  .wave-bar {
+    width: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    height: 4px;
+    transition: height 0.1s;
+  }
+
+  .wave-bar.active {
+    background: var(--accent-dim);
+  }
+
+  /* STATUS */
+  .status-bar {
+    padding: 12px 20px;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--text-faint);
+    border-bottom: 1px solid var(--border);
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-faint);
+    flex-shrink: 0;
+  }
+
+  .status-dot.thinking { background: var(--accent); animation: blink 1s infinite; }
+  .status-dot.done { background: var(--success); }
+  .status-dot.error { background: var(--danger); }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.2; }
+  }
+
+  /* RESULT */
+  .result-content {
+    padding: 20px;
+    font-size: 16px;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    color: var(--text);
+    font-style: italic;
+  }
+
+  .result-section-head {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-style: normal;
+    display: block;
+    margin: 20px 0 8px;
+  }
+
+  /* SETTINGS */
+  .settings-item {
+    padding: 16px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .settings-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .settings-note {
+    font-size: 14px;
+    color: var(--text-faint);
+    margin-top: 6px;
+    font-style: italic;
+  }
+
+  /* NAV */
+  nav {
+    position: fixed;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 100%;
+    max-width: 480px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    display: flex;
+    z-index: 100;
+  }
+
+  nav button {
+    flex: 1;
+    padding: 14px 8px 12px;
+    background: none;
+    border: none;
+    color: var(--text-faint);
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    transition: color 0.2s;
+  }
+
+  nav button.active { color: var(--accent); }
+  nav button svg { opacity: 0.7; }
+  nav button.active svg { opacity: 1; }
+
+  /* DICTIONARY */
+  .dict-entry {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .dict-code {
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    color: var(--accent);
+    min-width: 40px;
+  }
+
+  .dict-name {
+    font-size: 15px;
+    color: var(--text-dim);
+    font-style: italic;
+    flex: 1;
+  }
+
+  /* HISTORY */
+  .history-item {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .history-item:active { background: var(--surface2); }
+
+  .history-item-code {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    color: var(--accent);
+  }
+
+  .history-item-date {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--text-faint);
+    float: right;
+  }
+
+  .history-item-preview {
+    font-size: 15px;
+    color: var(--text-dim);
+    margin-top: 4px;
+    font-style: italic;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+
+  /* MODAL */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 200;
+    display: none;
+    align-items: flex-end;
+  }
+
+  .modal-overlay.open { display: flex; }
+
+  .modal {
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    width: 100%;
+    max-height: 80vh;
+    overflow-y: auto;
+    padding: 24px 20px 40px;
+    border-radius: 12px 12px 0 0;
+  }
+
+  .modal-title {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 16px;
+  }
+
+  .modal-content {
+    font-size: 15px;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    color: var(--text-dim);
+    font-style: italic;
+  }
+
+  /* UTIL */
+  .mt8 { margin-top: 8px; }
+  .mt16 { margin-top: 16px; }
+  .gap8 { display: flex; flex-direction: column; gap: 8px; }
+
+  .empty-state {
+    padding: 48px 20px;
+    text-align: center;
+    color: var(--text-faint);
+    font-style: italic;
+    font-size: 16px;
+  }
+
+  .tag {
+    display: inline-block;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 2px;
+    background: var(--surface2);
+    color: var(--text-faint);
+    letter-spacing: 0.08em;
+  }
+
+  .transcription-box {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 14px;
+    font-size: 15px;
+    color: var(--text-dim);
+    font-style: italic;
+    line-height: 1.6;
+    max-height: 160px;
+    overflow-y: auto;
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header>
+    <h1>Terapeutický zápisník</h1>
+    <span class="sub" id="header-date"></span>
+  </header>
+
+  <!-- SCREEN: ZÁPIS -->
+  <div class="screen active" id="screen-zapis">
+
+    <div class="section">
+      <div class="section-label">Klient & sezení</div>
+      <div class="input-row">
+        <input type="text" id="klient-kod" placeholder="K001" maxlength="6" style="text-transform:uppercase; font-family:'DM Mono',monospace; font-size:16px;">
+        <input type="number" id="sezeni-cislo" placeholder="č. sezení" min="1" max="999">
+      </div>
+    </div>
+
+    <div class="record-area">
+      <div class="timer" id="timer">0:00</div>
+      <button class="record-btn" id="record-btn" onclick="toggleRecording()">
+        <svg id="rec-icon" width="28" height="28" viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="12" r="8" fill="#c44a4a"/>
+        </svg>
+      </button>
+      <span class="record-label" id="record-label">Klepnutím zahájíš nahrávání</span>
+    </div>
+
+    <div class="waveform" id="waveform">
+      <!-- generated by JS -->
+    </div>
+
+    <div class="status-bar" id="status-bar">
+      <div class="status-dot" id="status-dot"></div>
+      <span id="status-text">Připraven</span>
+    </div>
+
+    <!-- Přepis (zobrazí se po nahrání) -->
+    <div class="section" id="transcription-section" style="display:none;">
+      <div class="section-label">Přepis (Whisper)</div>
+      <div class="transcription-box" id="transcription-text"></div>
+    </div>
+
+    <!-- Akce po nahrání -->
+    <div class="section gap8" id="actions-section" style="display:none;">
+      <button class="btn btn-primary" onclick="strukturujZapis()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+        Strukturovat & pseudonymizovat
+      </button>
+      <button class="btn btn-ghost" onclick="resetZapis()">Nahrát znovu</button>
+    </div>
+
+    <!-- Výsledek -->
+    <div id="result-section" style="display:none;">
+      <div class="section">
+        <div class="section-label">Pseudonymizační slovník (lokální)</div>
+        <div id="dict-preview"></div>
+      </div>
+      <div class="section">
+        <div class="section-label">Strukturovaný zápis</div>
+        <div id="result-preview" class="result-content"></div>
+      </div>
+      <div class="section gap8">
+        <button class="btn btn-success" onclick="ulozZapis()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+          Uložit zápis
+        </button>
+        <button class="btn btn-ghost" onclick="spustIntervizi()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+          Spustit intervizi
+        </button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- SCREEN: INTERVIZE -->
+  <div class="screen" id="screen-intervize">
+    <div class="section">
+      <div class="section-label">Intervizní dialog</div>
+      <p style="font-size:15px; color:var(--text-dim); font-style:italic;">Claude jako intervizní partner — pracuje s posledním uloženým zápisem.</p>
+    </div>
+
+    <div id="intervize-chat" style="padding: 0 0 16px 0; min-height: 200px;">
+      <div class="empty-state">Uložte zápis a spusťte intervizi.</div>
+    </div>
+
+    <div class="section" id="intervize-input-area" style="display:none;">
+      <div class="input-row" style="grid-template-columns: 1fr auto; gap: 8px;">
+        <textarea id="intervize-input" placeholder="Tvoje odpověď..." rows="3" style="resize:none;"></textarea>
+        <button class="btn btn-primary" style="width:48px; padding:0;" onclick="odpovedIntervize()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCREEN: ARCHIV -->
+  <div class="screen" id="screen-archiv">
+    <div id="archiv-list">
+      <div class="empty-state">Zatím žádné záznamy.</div>
+    </div>
+  </div>
+
+  <!-- SCREEN: NASTAVENÍ -->
+  <div class="screen" id="screen-nastaveni">
+    <div class="section">
+      <div class="section-label">API klíče</div>
+      <div class="settings-item">
+        <div class="settings-label">OpenAI API Key (Whisper)</div>
+        <input type="password" id="openai-key" placeholder="sk-...">
+        <div class="settings-note">Pro přepis hlasu do textu (~0.15 Kč / min)</div>
+      </div>
+      <div class="settings-item">
+        <div class="settings-label">Anthropic API Key (Claude)</div>
+        <input type="password" id="anthropic-key" placeholder="sk-ant-...">
+        <div class="settings-note">Pro strukturování a intervizi (~2 Kč / zápis)</div>
+      </div>
+      <div class="mt16">
+        <button class="btn btn-primary" onclick="ulozNastaveni()">Uložit klíče</button>
+      </div>
+      <div class="settings-note mt8">Klíče jsou uloženy pouze v tomto prohlížeči (localStorage). Nikam se neodesílají.</div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Data</div>
+      <div class="mt8 gap8">
+        <button class="btn btn-ghost" onclick="exportujData()">Exportovat všechna data (JSON)</button>
+        <button class="btn btn-danger" onclick="smazVse()">Smazat vše</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- NAV -->
+<nav>
+  <button class="active" onclick="showScreen('zapis', this)" id="nav-zapis">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>
+    Zápis
+  </button>
+  <button onclick="showScreen('intervize', this)" id="nav-intervize">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+    Intervize
+  </button>
+  <button onclick="showScreen('archiv', this)" id="nav-archiv">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+    Archiv
+  </button>
+  <button onclick="showScreen('nastaveni', this)" id="nav-nastaveni">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 010 14.14M4.93 4.93a10 10 0 000 14.14"/></svg>
+    Nastavení
+  </button>
+</nav>
+
+<!-- MODAL pro detail záznamu -->
+<div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
+  <div class="modal">
+    <div class="modal-title" id="modal-title"></div>
+    <div class="modal-content" id="modal-content"></div>
+  </div>
+</div>
+
+<!-- MODAL: Potvrzení identity osoby -->
+<div class="modal-overlay" id="identity-modal">
+  <div class="modal">
+    <div class="modal-title">Nejistá identita osoby</div>
+    <div id="identity-questions"></div>
+    <div style="margin-top:16px;" class="gap8" id="identity-actions"></div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// STATE
+// ============================================================
+let mediaRecorder = null;
+let audioChunks = [];
+let isRecording = false;
+let timerInterval = null;
+let timerSeconds = 0;
+let waveInterval = null;
+let analyser = null;
+let audioContext = null;
+
+let currentTranscript = '';
+let currentZapis = '';
+let currentDict = {};
+let currentKlientKod = '';
+let currentSezeniCislo = 1;
+
+let intervizeHistory = [];
+let lastZapis = null;
+
+// ============================================================
+// INIT
+// ============================================================
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('header-date').textContent = new Date().toLocaleDateString('cs-CZ', {day:'numeric', month:'long', year:'numeric'});
+  nactiNastaveni();
+  generujWaveform();
+  renderArchiv();
+});
+
+// ============================================================
+// NAVIGATION
+// ============================================================
+function showScreen(name, btn) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('screen-' + name).classList.add('active');
+  btn.classList.add('active');
+  if (name === 'archiv') renderArchiv();
+}
+
+// ============================================================
+// WAVEFORM
+// ============================================================
+function generujWaveform() {
+  const wf = document.getElementById('waveform');
+  wf.innerHTML = '';
+  for (let i = 0; i < 40; i++) {
+    const bar = document.createElement('div');
+    bar.className = 'wave-bar';
+    bar.style.height = '4px';
+    wf.appendChild(bar);
+  }
+}
+
+function animujWaveform(data) {
+  const bars = document.querySelectorAll('.wave-bar');
+  bars.forEach((bar, i) => {
+    const val = data ? (data[i * Math.floor(data.length / 40)] || 0) : 0;
+    const h = Math.max(4, Math.min(40, val / 255 * 44));
+    bar.style.height = h + 'px';
+    bar.classList.toggle('active', data && val > 20);
+  });
+}
+
+// ============================================================
+// RECORDING
+// ============================================================
+async function toggleRecording() {
+  if (!isRecording) {
+    await startRecording();
+  } else {
+    stopRecording();
+  }
+}
+
+async function startRecording() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const source = audioContext.createMediaStreamSource(stream);
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 256;
+    source.connect(analyser);
+
+    mediaRecorder = new MediaRecorder(stream, { mimeType: getSupportedMimeType() });
+    audioChunks = [];
+
+    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+    mediaRecorder.onstop = handleRecordingStop;
+    mediaRecorder.start(100);
+
+    isRecording = true;
+    timerSeconds = 0;
+
+    document.getElementById('record-btn').classList.add('recording');
+    document.getElementById('record-label').textContent = 'Nahrávám — klepni pro zastavení';
+    document.getElementById('record-label').classList.add('active');
+
+    timerInterval = setInterval(() => {
+      timerSeconds++;
+      const m = Math.floor(timerSeconds / 60);
+      const s = timerSeconds % 60;
+      document.getElementById('timer').textContent = `${m}:${s.toString().padStart(2,'0')}`;
+    }, 1000);
+
+    waveInterval = setInterval(() => {
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      analyser.getByteFrequencyData(data);
+      animujWaveform(data);
+    }, 80);
+
+    setStatus('thinking', 'Nahrávám...');
+
+  } catch (err) {
+    setStatus('error', 'Chyba mikrofonu: ' + err.message);
+  }
+}
+
+function getSupportedMimeType() {
+  const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
+  for (const t of types) {
+    if (MediaRecorder.isTypeSupported(t)) return t;
+  }
+  return '';
+}
+
+function stopRecording() {
+  if (mediaRecorder && isRecording) {
+    mediaRecorder.stop();
+    mediaRecorder.stream.getTracks().forEach(t => t.stop());
+    isRecording = false;
+    clearInterval(timerInterval);
+    clearInterval(waveInterval);
+    animujWaveform(null);
+
+    document.getElementById('record-btn').classList.remove('recording');
+    document.getElementById('record-label').textContent = 'Zpracovávám...';
+    document.getElementById('record-label').classList.remove('active');
+  }
+}
+
+async function handleRecordingStop() {
+  setStatus('thinking', 'Přepisuji s Whisper...');
+
+  const openaiKey = localStorage.getItem('openai_key');
+  if (!openaiKey) {
+    setStatus('error', 'Chybí OpenAI API klíč — nastav v Nastavení');
+    return;
+  }
+
+  const mimeType = getSupportedMimeType() || 'audio/webm';
+  const blob = new Blob(audioChunks, { type: mimeType });
+  const ext = mimeType.includes('mp4') ? 'mp4' : mimeType.includes('ogg') ? 'ogg' : 'webm';
+
+  const formData = new FormData();
+  formData.append('file', blob, `recording.${ext}`);
+  formData.append('model', 'whisper-1');
+  formData.append('language', 'cs');
+
+  try {
+    const resp = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${openaiKey}` },
+      body: formData
+    });
+
+    if (!resp.ok) throw new Error(await resp.text());
+    const data = await resp.json();
+    currentTranscript = data.text;
+
+    document.getElementById('transcription-text').textContent = currentTranscript;
+    document.getElementById('transcription-section').style.display = 'block';
+    document.getElementById('actions-section').style.display = 'block';
+    document.getElementById('record-label').textContent = 'Přepis hotový';
+
+    setStatus('done', 'Přepis dokončen — zkontroluj a strukturuj');
+  } catch (err) {
+    setStatus('error', 'Chyba Whisper: ' + err.message);
+  }
+}
+
+// ============================================================
+// SLOVNÍK — dvouvrstvá struktura
+// 
+// Veřejný slovník (jde do Gitu / zobrazuje se):
+//   dict_K001 = { P1: "partnerka, žena, ~38", P2: "syn, muž, 16" }
+//
+// Privátní slovník (jen lokálně, NIKDY neopouští prohlížeč):
+//   priv_K001 = { P1: ["Lucie","Lucka","Lucii"], P2: ["Tomáš","Tomík"] }
+// ============================================================
+
+function nactiVerejnyDict(kod) {
+  return JSON.parse(localStorage.getItem(`dict_${kod}`) || '{}');
+}
+
+function nactiPrivatniDict(kod) {
+  return JSON.parse(localStorage.getItem(`priv_${kod}`) || '{}');
+}
+
+function ulozVerejnyDict(kod, dict) {
+  localStorage.setItem(`dict_${kod}`, JSON.stringify(dict));
+}
+
+function ulozPrivatniDict(kod, dict) {
+  localStorage.setItem(`priv_${kod}`, JSON.stringify(dict));
+}
+
+// Sestaví kontext pro Claude — jen role/pohlaví/věk, BEZ skutečných jmen
+function sestavDictKontextProClaude(verejnyDict) {
+  if (Object.keys(verejnyDict).length === 0) return '';
+  return '\n\nExistující osoby v zápisech (anonymizovaně):\n' +
+    Object.entries(verejnyDict).map(([k,v]) => `${k} = ${v}`).join('\n');
+}
+
+// ============================================================
+// STRUKTUROVÁNÍ + PSEUDONYMIZACE — FÁZE 1: detekce osob
+// ============================================================
+async function strukturujZapis() {
+  const kod = document.getElementById('klient-kod').value.trim().toUpperCase();
+  const seseni = parseInt(document.getElementById('sezeni-cislo').value) || 1;
+
+  if (!kod) { setStatus('error', 'Zadej kód klienta'); return; }
+  if (!currentTranscript) { setStatus('error', 'Nejprve nahraj poznámku'); return; }
+
+  const anthropicKey = localStorage.getItem('anthropic_key');
+  if (!anthropicKey) { setStatus('error', 'Chybí Anthropic API klíč — nastav v Nastavení'); return; }
+
+  currentKlientKod = kod;
+  currentSezeniCislo = seseni;
+
+  const verejnyDict = nactiVerejnyDict(kod);
+  const privatniDict = nactiPrivatniDict(kod);
+
+  setStatus('thinking', 'Rozpoznávám osoby...');
+  document.getElementById('actions-section').style.display = 'none';
+
+  const dnes = new Date().toISOString().split('T')[0];
+
+  // FÁZE 1: Nejprve detekuj osoby a zkontroluj nejistoty
+  // Privátní dict posíláme pro rozpoznání variant — jde do API, ale jen jako hint pro matching
+  const privatniHint = Object.keys(privatniDict).length > 0
+    ? '\n\nZnámé varianty jmen (pro rozpoznání totožnosti):\n' +
+      Object.entries(privatniDict).map(([k,v]) => `${k}: ${v.join(', ')}`).join('\n')
+    : '';
+
+  const faze1Prompt = `Jsi asistent biosyntézového terapeuta. Analyzuj text a identifikuj všechny osoby.
+
+EXISTUJÍCÍ SLOVNÍK${sestavDictKontextProClaude(verejnyDict)}${privatniHint}
+
+PRAVIDLA PRO ROZPOZNÁVÁNÍ VARIANT JMEN:
+- Lucie = Lucka = Lucii = Lucce = Luciiny → stejná osoba
+- Tomáš = Tomík = Tomáše = Tomášovi → stejná osoba  
+- Různé pádové tvary, zdrobněliny a přechýlení považuj za tutéž osobu
+- Pokud si nejsi JISTÝ že jde o stejnou osobu, označ jako NEJISTÉ
+
+Vrať JSON (nic jiného):
+{
+  "osoby": [
+    {
+      "jmena_v_textu": ["Lucka", "Lucie"],
+      "existujici_kod": "P1",
+      "jistota": "jistá",
+      "role": "partnerka",
+      "pohlavi": "žena",
+      "vek": "~38"
+    },
+    {
+      "jmena_v_textu": ["Pavel"],
+      "existujici_kod": null,
+      "jistota": "nová",
+      "role": "otec klienta",
+      "pohlavi": "muž",
+      "vek": "~65"
+    },
+    {
+      "jmena_v_textu": ["Petra"],
+      "existujici_kod": "P3",
+      "jistota": "nejistá",
+      "duvod_nejistoty": "Petra není v seznamu variant P3, ale role odpovídá",
+      "role": "kolegyně",
+      "pohlavi": "žena",
+      "vek": "neznámý"
+    }
+  ],
+  "mista": [
+    { "nazev": "Brno", "kod": "M1", "popis": "město na Moravě", "jistota": "jistá" }
+  ],
+  "instituce": [
+    { "nazev": "nemocnice", "kod": "Z1", "popis": "zdravotnické zařízení", "jistota": "jistá" }
+  ]
+}
+
+Hodnoty jistota: "jistá" | "nejistá" | "nová"`;
+
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': anthropicKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1500,
+        system: faze1Prompt,
+        messages: [{ role: 'user', content: `Klient: ${kod}\n\nTEXT:\n${currentTranscript}` }]
+      })
+    });
+
+    if (!resp.ok) throw new Error(await resp.text());
+    const data = await resp.json();
+    let rawJson = data.content[0].text.trim();
+    // Odstraň případné ```json bloky
+    rawJson = rawJson.replace(/^```json\s*/,'').replace(/\s*```$/,'');
+    const detekce = JSON.parse(rawJson);
+
+    // Zjisti, jsou-li nejisté identity
+    const nejiste = [
+      ...(detekce.osoby || []).filter(o => o.jistota === 'nejistá'),
+      ...(detekce.mista || []).filter(m => m.jistota === 'nejistá'),
+      ...(detekce.instituce || []).filter(i => i.jistota === 'nejistá')
+    ];
+
+    if (nejiste.length > 0) {
+      // Zobraz potvrzovací dialog
+      zobrazIdentityDialog(nejiste, detekce, kod, seseni, dnes, verejnyDict, privatniDict, anthropicKey);
+    } else {
+      // Vše jasné, jdi rovnou do fáze 2
+      await faze2Strukturuj(detekce, kod, seseni, dnes, verejnyDict, privatniDict, anthropicKey);
+    }
+
+  } catch (err) {
+    setStatus('error', 'Chyba: ' + err.message);
+    document.getElementById('actions-section').style.display = 'block';
+  }
+}
+
+// ============================================================
+// DIALOG PRO POTVRZENÍ NEJISTÝCH IDENTIT
+// ============================================================
+let identityResolutions = {};
+let pendingDetekce = null;
+let pendingParams = null;
+
+function zobrazIdentityDialog(nejiste, detekce, kod, seseni, dnes, verejnyDict, privatniDict, anthropicKey) {
+  identityResolutions = {};
+  pendingDetekce = detekce;
+  pendingParams = { kod, seseni, dnes, verejnyDict, privatniDict, anthropicKey };
+
+  const questionsEl = document.getElementById('identity-questions');
+  const actionsEl = document.getElementById('identity-actions');
+
+  let html = '';
+  nejiste.forEach((item, idx) => {
+    const jmena = item.jmena_v_textu ? item.jmena_v_textu.join(', ') : item.nazev;
+    const existujiciPopis = item.existujici_kod
+      ? `${item.existujici_kod} (${(pendingParams.verejnyDict[item.existujici_kod] || '?')})`
+      : null;
+
+    html += `<div style="padding:14px 0; border-bottom:1px solid var(--border);">
+      <div style="font-family:'DM Mono',monospace; font-size:10px; color:var(--accent); letter-spacing:0.15em; margin-bottom:8px; text-transform:uppercase;">
+        Nejistá identita ${idx + 1}/${nejiste.length}
+      </div>
+      <div style="font-size:16px; margin-bottom:4px;">
+        <strong style="color:var(--text);">"${jmena}"</strong>
+        <span style="color:var(--text-dim);"> — ${item.role || ''}${item.pohlavi ? ', ' + item.pohlavi : ''}</span>
+      </div>`;
+
+    if (item.duvod_nejistoty) {
+      html += `<div style="font-size:13px; color:var(--text-faint); font-style:italic; margin-bottom:10px;">${item.duvod_nejistoty}</div>`;
+    }
+
+    html += `<div class="gap8" style="margin-top:10px;">`;
+
+    if (existujiciPopis) {
+      html += `<button class="btn btn-ghost" style="font-size:12px; text-align:left; justify-content:flex-start;"
+        onclick="resolveIdentity(${idx}, 'same', '${item.existujici_kod}', '${jmena.replace(/'/g,"\\'")}')">
+        ✓ Ano, je to ${existujiciPopis}
+      </button>`;
+    }
+
+    html += `<button class="btn btn-ghost" style="font-size:12px; text-align:left; justify-content:flex-start;"
+      onclick="resolveIdentity(${idx}, 'new', null, '${jmena.replace(/'/g,"\\'")}')">
+      + Nová osoba (přiřadit nový kód)
+    </button>`;
+
+    html += `</div></div>`;
+  });
+
+  questionsEl.innerHTML = html;
+  actionsEl.innerHTML = `<button class="btn btn-ghost" onclick="zavriIdentityDialog()">Zrušit</button>`;
+
+  document.getElementById('identity-modal').classList.add('open');
+  setStatus('thinking', `Potvrď ${nejiste.length} nejist${nejiste.length === 1 ? 'ou identitu' : 'é identity'}...`);
+}
+
+function resolveIdentity(idx, typ, existujiciKod, jmena) {
+  identityResolutions[idx] = { typ, existujiciKod, jmena };
+
+  // Zkontroluj, jestli jsou všechny nejisté položky vyřešeny
+  const nejiste = [
+    ...(pendingDetekce.osoby || []).filter(o => o.jistota === 'nejistá'),
+    ...(pendingDetekce.mista || []).filter(m => m.jistota === 'nejistá'),
+    ...(pendingDetekce.instituce || []).filter(i => i.jistota === 'nejistá')
+  ];
+
+  if (Object.keys(identityResolutions).length >= nejiste.length) {
+    // Aplikuj rozhodnutí
+    aplikujResolutions(nejiste);
+    document.getElementById('identity-modal').classList.remove('open');
+    faze2Strukturuj(
+      pendingDetekce,
+      pendingParams.kod,
+      pendingParams.seseni,
+      pendingParams.dnes,
+      pendingParams.verejnyDict,
+      pendingParams.privatniDict,
+      pendingParams.anthropicKey
+    );
+  } else {
+    // Vizuálně označ jako vyřešené
+    const btns = document.querySelectorAll(`#identity-questions .btn`);
+    // Jednoduché řešení: zašedni aktuální otázku
+    setStatus('thinking', `Vyřešeno ${Object.keys(identityResolutions).length}/${nejiste.length}...`);
+  }
+}
+
+function aplikujResolutions(nejiste) {
+  nejiste.forEach((item, idx) => {
+    const res = identityResolutions[idx];
+    if (!res) return;
+
+    if (res.typ === 'same' && res.existujiciKod) {
+      // Přidej jména jako varianty do privátního slovníku
+      const privDict = nactiPrivatniDict(pendingParams.kod);
+      if (!privDict[res.existujiciKod]) privDict[res.existujiciKod] = [];
+      const novaJmena = res.jmena.split(', ');
+      novaJmena.forEach(j => {
+        if (!privDict[res.existujiciKod].includes(j)) privDict[res.existujiciKod].push(j);
+      });
+      ulozPrivatniDict(pendingParams.kod, privDict);
+      // Aktualizuj detekci
+      if (item.existujici_kod) item.jistota = 'jistá';
+    } else if (res.typ === 'new') {
+      // Označíme jako novou — fáze 2 přiřadí nový kód
+      item.existujici_kod = null;
+      item.jistota = 'nová';
+    }
+  });
+}
+
+function zavriIdentityDialog() {
+  document.getElementById('identity-modal').classList.remove('open');
+  document.getElementById('actions-section').style.display = 'block';
+  setStatus('', 'Připraven');
+}
+
+// ============================================================
+// FÁZE 2: Strukturování s potvrzenými identitami
+// ============================================================
+async function faze2Strukturuj(detekce, kod, seseni, dnes, verejnyDict, privatniDict, anthropicKey) {
+  setStatus('thinking', 'Strukturuji zápis...');
+
+  // Přiřaď kódy novým osobám
+  const existujiciKody = Object.keys(verejnyDict);
+  let novyKodIdx = {
+    P: Math.max(0, ...existujiciKody.filter(k=>k[0]==='P').map(k=>parseInt(k.slice(1))||0)) + 1,
+    Z: Math.max(0, ...existujiciKody.filter(k=>k[0]==='Z').map(k=>parseInt(k.slice(1))||0)) + 1,
+    M: Math.max(0, ...existujiciKody.filter(k=>k[0]==='M').map(k=>parseInt(k.slice(1))||0)) + 1,
+  };
+
+  const novyVerejnyDict = { ...verejnyDict };
+  const novyPrivatniDict = { ...privatniDict };
+
+  // Přidej nové osoby do slovníku
+  (detekce.osoby || []).forEach(o => {
+    if (o.jistota === 'nová' || (!o.existujici_kod && o.jistota !== 'ignorovat')) {
+      const novyKod = `P${novyKodIdx.P++}`;
+      o.existujici_kod = novyKod;
+      novyVerejnyDict[novyKod] = `${o.role || 'osoba'}, ${o.pohlavi || '?'}, ${o.vek || '?'}`;
+      novyPrivatniDict[novyKod] = o.jmena_v_textu || [];
+    } else if (o.existujici_kod && o.jmena_v_textu) {
+      // Přidej varianty jmen do privátního slovníku
+      if (!novyPrivatniDict[o.existujici_kod]) novyPrivatniDict[o.existujici_kod] = [];
+      o.jmena_v_textu.forEach(j => {
+        if (!novyPrivatniDict[o.existujici_kod].includes(j)) novyPrivatniDict[o.existujici_kod].push(j);
+      });
+    }
+  });
+
+  (detekce.mista || []).forEach(m => {
+    if (!m.kod || m.jistota === 'nová') {
+      const novyKod = `M${novyKodIdx.M++}`;
+      m.kod = novyKod;
+      novyVerejnyDict[novyKod] = m.popis || m.nazev;
+    }
+  });
+
+  (detekce.instituce || []).forEach(i => {
+    if (!i.kod || i.jistota === 'nová') {
+      const novyKod = `Z${novyKodIdx.Z++}`;
+      i.kod = novyKod;
+      novyVerejnyDict[novyKod] = i.popis || i.nazev;
+    }
+  });
+
+  // Sestav substituční mapu: skutečné jméno → kód
+  let substituce = `Klient ${kod} = ${kod}\n`;
+  (detekce.osoby || []).forEach(o => {
+    if (o.existujici_kod && o.jmena_v_textu) {
+      o.jmena_v_textu.forEach(j => { substituce += `${j} → ${o.existujici_kod}\n`; });
+    }
+  });
+  (detekce.mista || []).forEach(m => {
+    if (m.kod) substituce += `${m.nazev} → ${m.kod}\n`;
+  });
+  (detekce.instituce || []).forEach(i => {
+    if (i.kod) substituce += `${i.nazev} → ${i.kod}\n`;
+  });
+
+  const faze2Prompt = `Jsi asistent biosyntézového terapeuta. Strukturuj mluvenou poznámku do biosyntézové šablony.
+
+SUBSTITUCE (nahraď VŠECHNY výskyty, včetně skloňovaných tvarů):
+${substituce}
+
+Vrať POUZE strukturovaný Markdown zápis:
+
+---
+klient: ${kod}
+datum: ${dnes}
+sezeni: ${seseni}
+---
+
+## Reaktivace
+[spontánní první dojem terapeuta — zachovej jeho slova]
+
+## Narativ a téma
+[co přinesl klient, jak se téma vyvíjelo, co zůstalo otevřené]
+
+## Tělesné procesy
+[pozorování těla klienta, somatické vzorce, intervence]
+
+## Kvalita kontaktu a pole
+[živost kontaktu, přerušení, atmosféra]
+
+## Přenos a protipřenos
+[pocity terapeuta, dynamika přenosu]
+
+## Klíčové momenty
+[překvapení, průlomy, co znepokojilo]
+
+## Biosyntézový rám
+Grounding: [uzemnění, kontakt se zemí]
+Centering: [vnitřní střed, koherence]
+Facing: [kontakt s realitou, druhým]
+
+## Záměr pro příští sezení
+[co otevřít, na co si dát pozor]
+
+## Poznámky pro intervizi
+[co přinést do reflexe]`;
+
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': anthropicKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 3000,
+        system: faze2Prompt,
+        messages: [{ role: 'user', content: currentTranscript }]
+      })
+    });
+
+    if (!resp.ok) throw new Error(await resp.text());
+    const data = await resp.json();
+    currentZapis = data.content[0].text.trim();
+    currentDict = novyVerejnyDict;
+
+    // Ulož oba slovníky
+    ulozVerejnyDict(kod, novyVerejnyDict);
+    ulozPrivatniDict(kod, novyPrivatniDict);
+
+    document.getElementById('result-preview').textContent = currentZapis;
+    renderDictPreview(novyVerejnyDict, novyPrivatniDict);
+    document.getElementById('result-section').style.display = 'block';
+    setStatus('done', 'Hotovo — zkontroluj a ulož');
+
+  } catch (err) {
+    setStatus('error', 'Chyba strukturování: ' + err.message);
+    document.getElementById('actions-section').style.display = 'block';
+  }
+}
+
+function renderDictPreview(verejnyDict, privatniDict) {
+  const el = document.getElementById('dict-preview');
+  const priv = privatniDict || nactiPrivatniDict(currentKlientKod);
+
+  if (Object.keys(verejnyDict).length === 0) {
+    el.innerHTML = '<span style="color:var(--text-faint);font-style:italic;font-size:14px;">Žádné osoby v zápisech.</span>';
+    return;
+  }
+  el.innerHTML = Object.entries(verejnyDict).map(([k,v]) => {
+    const varianty = priv[k] ? priv[k].join(', ') : '';
+    return `<div class="dict-entry">
+      <span class="dict-code">${k}</span>
+      <div style="flex:1;">
+        <div class="dict-name">${v}</div>
+        ${varianty ? `<div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--text-faint);margin-top:2px;">${varianty}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ============================================================
+// ULOŽENÍ
+// ============================================================
+function ulozZapis() {
+  if (!currentZapis || !currentKlientKod) return;
+
+  const zaznam = {
+    id: Date.now(),
+    kod: currentKlientKod,
+    sezeni: currentSezeniCislo,
+    datum: new Date().toISOString().split('T')[0],
+    zapis: currentZapis,
+    transcript: currentTranscript
+  };
+
+  const zaznamy = JSON.parse(localStorage.getItem('zaznamy') || '[]');
+  zaznamy.unshift(zaznam);
+  localStorage.setItem('zaznamy', JSON.stringify(zaznamy));
+  lastZapis = zaznam;
+
+  setStatus('done', `Zápis ${currentKlientKod} / sezení ${currentSezeniCislo} uložen`);
+  document.getElementById('result-section').style.display = 'none';
+  document.getElementById('transcription-section').style.display = 'none';
+  document.getElementById('actions-section').style.display = 'none';
+  document.getElementById('timer').textContent = '0:00';
+  currentTranscript = '';
+  currentZapis = '';
+}
+
+function resetZapis() {
+  currentTranscript = '';
+  document.getElementById('transcription-section').style.display = 'none';
+  document.getElementById('actions-section').style.display = 'none';
+  document.getElementById('result-section').style.display = 'none';
+  document.getElementById('timer').textContent = '0:00';
+  setStatus('', 'Připraven');
+}
+
+// ============================================================
+// INTERVIZE
+// ============================================================
+async function spustIntervizi() {
+  if (!lastZapis) {
+    setStatus('error', 'Nejprve ulož zápis');
+    return;
+  }
+
+  intervizeHistory = [];
+
+  // Přepni na tab intervize
+  showScreen('intervize', document.getElementById('nav-intervize'));
+
+  document.getElementById('intervize-input-area').style.display = 'block';
+
+  const anthropicKey = localStorage.getItem('anthropic_key');
+
+  const systemPrompt = `Jsi zkušený biosyntézový terapeut a intervizní kolega. Tvůj kolega ti přinesl zápis sezení.
+
+Vedeš živý intervizní rozhovor. Pravidla:
+- Kladeš JEDNU otázku najednou
+- Otázky míří na tělo, pole, vztah, přenos — ne na kognice
+- Zajímáš se o terapeuta jako o osobu, ne jen o techniku
+- Pracuješ s tím, co je živé a nedořešené v zápisu
+- Biosyntézový rámec: grounding, centering, facing
+- Buď přítomný, lidský, ne akademický
+- Česky, tykej`;
+
+  const prvniZprava = `Přináším ti zápis sezení s klientem ${lastZapis.kod} (sezení č. ${lastZapis.sezeni}):\n\n${lastZapis.zapis}`;
+
+  intervizeHistory.push({ role: 'user', content: prvniZprava });
+
+  renderIntervizeChat('loading');
+
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': anthropicKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 500,
+        system: systemPrompt,
+        messages: intervizeHistory
+      })
+    });
+
+    const data = await resp.json();
+    const odpoved = data.content[0].text;
+    intervizeHistory.push({ role: 'assistant', content: odpoved });
+    renderIntervizeChat();
+
+  } catch (err) {
+    renderIntervizeChat('error');
+  }
+}
+
+async function odpovedIntervize() {
+  const input = document.getElementById('intervize-input');
+  const text = input.value.trim();
+  if (!text) return;
+
+  input.value = '';
+  intervizeHistory.push({ role: 'user', content: text });
+  renderIntervizeChat('loading');
+
+  const anthropicKey = localStorage.getItem('anthropic_key');
+
+  const systemPrompt = `Jsi zkušený biosyntézový terapeut a intervizní kolega. Vedeš živý intervizní rozhovor. Kladeš JEDNU otázku najednou, míříš na tělo, pole, přenos. Buď přítomný a lidský. Česky, tykej.`;
+
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': anthropicKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 400,
+        system: systemPrompt,
+        messages: intervizeHistory
+      })
+    });
+
+    const data = await resp.json();
+    const odpoved = data.content[0].text;
+    intervizeHistory.push({ role: 'assistant', content: odpoved });
+    renderIntervizeChat();
+
+  } catch (err) {
+    renderIntervizeChat('error');
+  }
+}
+
+function renderIntervizeChat(state) {
+  const el = document.getElementById('intervize-chat');
+
+  const messages = intervizeHistory.filter(m => m.role !== 'user' || intervizeHistory.indexOf(m) > 0);
+
+  let html = '';
+
+  for (const msg of messages) {
+    if (msg.role === 'user') {
+      html += `<div style="padding:12px 20px; text-align:right;">
+        <div style="display:inline-block; background:var(--surface2); border-radius:12px 12px 2px 12px; padding:10px 14px; max-width:85%; font-size:15px; color:var(--text-dim); font-style:italic;">${msg.content}</div>
+      </div>`;
+    } else {
+      html += `<div style="padding:12px 20px;">
+        <div style="font-family:'DM Mono',monospace; font-size:9px; color:var(--accent); letter-spacing:0.15em; margin-bottom:6px; text-transform:uppercase;">Intervizor</div>
+        <div style="font-size:17px; line-height:1.65; color:var(--text);">${msg.content}</div>
+      </div>`;
+    }
+  }
+
+  if (state === 'loading') {
+    html += `<div style="padding:12px 20px;">
+      <div style="font-family:'DM Mono',monospace; font-size:9px; color:var(--accent); letter-spacing:0.15em; margin-bottom:6px; text-transform:uppercase;">Intervizor</div>
+      <div style="color:var(--text-faint); font-style:italic;">...</div>
+    </div>`;
+  }
+
+  el.innerHTML = html || '<div class="empty-state">Uložte zápis a spusťte intervizi.</div>';
+  el.scrollTop = el.scrollHeight;
+}
+
+// ============================================================
+// ARCHIV
+// ============================================================
+function renderArchiv() {
+  const zaznamy = JSON.parse(localStorage.getItem('zaznamy') || '[]');
+  const el = document.getElementById('archiv-list');
+
+  if (zaznamy.length === 0) {
+    el.innerHTML = '<div class="empty-state">Zatím žádné záznamy.</div>';
+    return;
+  }
+
+  el.innerHTML = zaznamy.map(z => `
+    <div class="history-item" onclick="zobrazZaznam(${z.id})">
+      <span class="history-item-code">${z.kod}</span>
+      <span class="history-item-date">${z.datum}</span>
+      <div style="font-family:'DM Mono',monospace; font-size:10px; color:var(--text-faint); margin-top:2px;">sezení ${z.sezeni}</div>
+      <div class="history-item-preview">${z.zapis.substring(0, 120)}...</div>
+    </div>
+  `).join('');
+}
+
+function zobrazZaznam(id) {
+  const zaznamy = JSON.parse(localStorage.getItem('zaznamy') || '[]');
+  const z = zaznamy.find(x => x.id === id);
+  if (!z) return;
+
+  document.getElementById('modal-title').textContent = `${z.kod} — sezení ${z.sezeni} — ${z.datum}`;
+  document.getElementById('modal-content').textContent = z.zapis;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function closeModal(e) {
+  if (e.target === document.getElementById('modal-overlay')) {
+    document.getElementById('modal-overlay').classList.remove('open');
+  }
+}
+
+// ============================================================
+// NASTAVENÍ
+// ============================================================
+function nactiNastaveni() {
+  const ok = localStorage.getItem('openai_key');
+  const ak = localStorage.getItem('anthropic_key');
+  if (ok) document.getElementById('openai-key').value = ok;
+  if (ak) document.getElementById('anthropic-key').value = ak;
+}
+
+function ulozNastaveni() {
+  const ok = document.getElementById('openai-key').value.trim();
+  const ak = document.getElementById('anthropic-key').value.trim();
+  if (ok) localStorage.setItem('openai_key', ok);
+  if (ak) localStorage.setItem('anthropic_key', ak);
+  setStatus('done', 'Klíče uloženy');
+}
+
+function exportujData() {
+  const data = {
+    zaznamy: JSON.parse(localStorage.getItem('zaznamy') || '[]'),
+    verejne_slovniky: {},
+    privatni_slovniky: {}
+  };
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key.startsWith('dict_')) data.verejne_slovniky[key] = JSON.parse(localStorage.getItem(key));
+    if (key.startsWith('priv_')) data.privatni_slovniky[key] = JSON.parse(localStorage.getItem(key));
+  }
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `terapie-export-${new Date().toISOString().split('T')[0]}.json`;
+  a.click();
+}
+
+function smazVse() {
+  if (confirm('Opravdu smazat vše? Tato akce je nevratná.')) {
+    localStorage.clear();
+    renderArchiv();
+    setStatus('done', 'Vše smazáno');
+  }
+}
+
+// ============================================================
+// STATUS
+// ============================================================
+function setStatus(type, text) {
+  const dot = document.getElementById('status-dot');
+  const txt = document.getElementById('status-text');
+  dot.className = 'status-dot' + (type ? ' ' + type : '');
+  txt.textContent = text;
+}
+</script>
+</body>
+</html>
